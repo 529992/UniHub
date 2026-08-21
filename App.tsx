@@ -137,6 +137,15 @@ function App() {
                 <Text style={styles.menuItemIcon}>▣</Text>
                 <Text style={styles.menuItemText}>Scanner</Text>
               </Pressable>
+              <Pressable
+                accessibilityLabel="Settings"
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
+                onPress={closeMenu}
+              >
+                <Text style={styles.menuItemIcon}>⚙</Text>
+                <Text style={styles.menuItemText}>Settings</Text>
+              </Pressable>
             </View>
           </Animated.View>
         </Pressable>
@@ -208,6 +217,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   menuGrid: {
+    flexWrap: 'wrap',
     flexDirection: 'row',
     gap: 12,
   },
@@ -219,6 +229,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     elevation: 2,
     flex: 1,
+    minWidth: '22%',
     minHeight: 92,
     paddingHorizontal: 6,
     paddingVertical: 12,
