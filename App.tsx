@@ -16,6 +16,31 @@ import WebView from 'react-native-webview';
 
 const menuIcon = require('./assets/centerButton_icon.png');
 const defaultHomePageUrl = 'https://lms.lpec.lk/login/index.php';
+const openFreeMapHtml = `
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link href="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js"></script>
+    <style>
+      html, body, #map { width: 100%; height: 100%; margin: 0; }
+      body { overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script>
+      new maplibregl.Map({
+        container: 'map',
+        style: 'https://tiles.openfreemap.org/styles/liberty',
+        center: [80.7718, 7.8731],
+        zoom: 7,
+        attributionControl: true
+      });
+    </script>
+  </body>
+</html>`;
 const customHomePageStorageKey = 'customHomePageUrl';
 const additionalLmsStorageKey = 'additionalLmsUrls';
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -25,6 +50,7 @@ const getFaviconUrl = (url: string) =>
 
 function App() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [activeScreen, setActiveScreen] = useState<'home' | 'map'>('home');
   const [topMenuOpen, setTopMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<'main' | 'lms' | 'profile'>('main');
@@ -113,9 +139,17 @@ function App() {
   };
 
   const goHome = () => {
+    setActiveScreen('home');
     setHomePageKey(current => current + 1);
     closeMenu();
     setSettingsOpen(false);
+  };
+
+  const openMap = () => {
+    setActiveScreen('map');
+    closeMenu();
+    setSettingsOpen(false);
+    setTopMenuOpen(false);
   };
 
   const openSettings = () => {
@@ -213,7 +247,7 @@ function App() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor="#153b75" barStyle="light-content" />
+      <StatusBar barStyle="light-content" />
       {settingsOpen ? settingsSection === 'main' ? (
         <View style={styles.settingsScreen}>
           <View style={styles.settingsHeader}>
@@ -335,6 +369,15 @@ function App() {
             ))}
           </View>
         </View>
+      ) : activeScreen === 'map' ? (
+        <WebView
+          originWhitelist={['*']}
+          source={{ html: openFreeMapHtml }}
+          style={styles.webView}
+          javaScriptEnabled
+          domStorageEnabled
+          showsVerticalScrollIndicator={false}
+        />
       ) : (
         <WebView
           key={homePageKey}
@@ -433,7 +476,7 @@ function App() {
                 accessibilityLabel="Map"
                 accessibilityRole="button"
                 style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
-                onPress={closeMenu}
+                onPress={openMap}
               >
                 <Text style={styles.menuItemIcon}>⌖</Text>
                 <Text style={styles.menuItemText}>Map</Text>
