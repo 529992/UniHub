@@ -16,10 +16,15 @@ const menuIcon = require('./assets/centerButton_icon.png');
 const defaultHomePageUrl = 'https://lms.lpec.lk/login/index.php';
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
+const getFaviconUrl = (url: string) =>
+  `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(url)}&sz=64`;
+
 function App() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [topMenuOpen, setTopMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [homePageUrl, setHomePageUrl] = useState(defaultHomePageUrl);
+  const [customHomePageUrl, setCustomHomePageUrl] = useState<string | null>(null);
   const [urlInput, setUrlInput] = useState(defaultHomePageUrl);
   const [homePageKey, setHomePageKey] = useState(0);
   const menuSlideRef = useRef<Animated.Value | null>(null);
@@ -83,6 +88,7 @@ function App() {
 
   const openSettings = () => {
     closeMenu();
+    setTopMenuOpen(false);
     setSettingsOpen(true);
   };
 
@@ -94,13 +100,16 @@ function App() {
     }
 
     setHomePageUrl(nextUrl);
+    setCustomHomePageUrl(nextUrl);
     setHomePageKey(current => current + 1);
   };
 
   const resetUrl = () => {
     setUrlInput(defaultHomePageUrl);
     setHomePageUrl(defaultHomePageUrl);
+    setCustomHomePageUrl(null);
     setHomePageKey(current => current + 1);
+    setTopMenuOpen(false);
   };
 
   const buttonRotationStyle = {
@@ -162,6 +171,48 @@ function App() {
           style={styles.webView}
           showsVerticalScrollIndicator={false}
         />
+      )}
+      {!settingsOpen && (
+        <View style={styles.topMenuContainer}>
+          <Pressable
+            accessibilityLabel={topMenuOpen ? 'Close LMS menu' : 'Open LMS menu'}
+            accessibilityRole="button"
+            onPress={() => setTopMenuOpen(current => !current)}
+            style={({ pressed }) => [styles.topMenuButton, pressed && styles.topMenuButtonPressed]}
+          >
+            <Text style={styles.topMenuButtonIcon}>⋮</Text>
+          </Pressable>
+          {topMenuOpen && (
+            <View style={styles.topMenu}>
+              <Pressable
+                accessibilityLabel="Use default LMS"
+                accessibilityRole="button"
+                onPress={resetUrl}
+                style={({ pressed }) => [styles.topMenuItem, pressed && styles.topMenuItemPressed]}
+              >
+                <Image
+                  accessibilityLabel="Default LMS favicon"
+                  source={{ uri: getFaviconUrl(defaultHomePageUrl) }}
+                  style={styles.topMenuItemIcon}
+                />
+              </Pressable>
+              {customHomePageUrl && (
+                <Pressable
+                  accessibilityLabel="Customize LMS URL"
+                  accessibilityRole="button"
+                  onPress={openSettings}
+                  style={({ pressed }) => [styles.topMenuItem, pressed && styles.topMenuItemPressed]}
+                >
+                  <Image
+                    accessibilityLabel="Custom LMS favicon"
+                    source={{ uri: getFaviconUrl(customHomePageUrl) }}
+                    style={styles.topMenuItemIcon}
+                  />
+                </Pressable>
+              )}
+            </View>
+          )}
+        </View>
       )}
       {menuOpen && (
         <Pressable style={styles.menuBackdrop} onPress={closeMenu}>
@@ -251,6 +302,68 @@ const styles = StyleSheet.create({
   webView: {
     flex: 1,
   },
+  topMenuContainer: {
+    position: 'absolute',
+    right: 10,
+    top: 65,
+    zIndex: 2,
+  },
+  topMenuButton: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#b9dedd',
+    borderRadius: 22,
+    borderWidth: 1,
+    elevation: 5,
+    height: 44,
+    justifyContent: 'center',
+    shadowColor: '#153b75',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    width: 44,
+  },
+  topMenuButtonPressed: {
+    backgroundColor: '#e9f6f5',
+  },
+  topMenuButtonIcon: {
+    color: '#153b75',
+    fontSize: 28,
+    fontWeight: '700',
+    lineHeight: 28,
+  },
+  topMenu: {
+    backgroundColor: '#ffffff',
+    borderColor: '#b9dedd',
+    borderRadius: 12,
+    borderWidth: 1,
+    elevation: 8,
+    marginTop: 8,
+    minWidth: 60,
+    overflow: 'hidden',
+    paddingVertical: 4,
+    position: 'absolute',
+    right: 0,
+    shadowColor: '#153b75',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    top: 44,
+  },
+  topMenuItem: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  topMenuItemPressed: {
+    backgroundColor: '#e9f6f5',
+  },
+  topMenuItemIcon: {
+    height: 24,
+    width: 24,
+  },
   settingsScreen: {
     backgroundColor: '#f4fbfa',
     flex: 1,
@@ -333,7 +446,7 @@ const styles = StyleSheet.create({
   },
   centerButton: {
     alignItems: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: '#c5dfde',
     borderColor: '#080808',
     borderRadius: 36,
     borderWidth: 3,
