@@ -1,7 +1,9 @@
-import { useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Image,
+  Modal,
   Pressable,
   StatusBar,
   StyleSheet,
@@ -14,6 +16,8 @@ import WebView from 'react-native-webview';
 
 const menuIcon = require('./assets/centerButton_icon.png');
 const defaultHomePageUrl = 'https://lms.lpec.lk/login/index.php';
+const customHomePageStorageKey = 'customHomePageUrl';
+const additionalLmsStorageKey = 'additionalLmsUrls';
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 const getFaviconUrl = (url: string) =>
@@ -23,12 +27,40 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [topMenuOpen, setTopMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<'main' | 'lms' | 'profile'>('main');
   const [homePageUrl, setHomePageUrl] = useState(defaultHomePageUrl);
   const [customHomePageUrl, setCustomHomePageUrl] = useState<string | null>(null);
-  const [urlInput, setUrlInput] = useState(defaultHomePageUrl);
+  const [urlInput, setUrlInput] = useState('');
+  const [additionalLmsUrls, setAdditionalLmsUrls] = useState<string[]>([]);
+  const [additionalUrlInput, setAdditionalUrlInput] = useState('');
+  const [urlToDelete, setUrlToDelete] = useState<string | null>(null);
   const [homePageKey, setHomePageKey] = useState(0);
   const menuSlideRef = useRef<Animated.Value | null>(null);
   const buttonRotationRef = useRef<Animated.Value | null>(null);
+
+  useEffect(() => {
+    const loadCustomHomePage = async () => {
+      try {
+        const savedUrl = await AsyncStorage.getItem(customHomePageStorageKey);
+
+        if (savedUrl) {
+          setCustomHomePageUrl(savedUrl);
+          setHomePageUrl(savedUrl);
+          setUrlInput(savedUrl);
+        }
+
+        const savedAdditionalUrls = await AsyncStorage.getItem(additionalLmsStorageKey);
+        if (savedAdditionalUrls) {
+          const parsedUrls: unknown = JSON.parse(savedAdditionalUrls);
+          if (Array.isArray(parsedUrls)) {
+            setAdditionalLmsUrls(parsedUrls.filter((url): url is string => typeof url === 'string'));
+          }
+        }
+      } catch {}
+    };
+
+    loadCustomHomePage();
+  }, []);
 
   if (!menuSlideRef.current) {
     menuSlideRef.current = new Animated.Value(0);
@@ -90,9 +122,13 @@ function App() {
     closeMenu();
     setTopMenuOpen(false);
     setSettingsOpen(true);
+    setSettingsSection('main');
   };
 
-  const submitUrl = () => {
+  const openLmsSettings = () => setSettingsSection('lms');
+  const openProfileSettings = () => setSettingsSection('profile');
+
+  const submitUrl = async () => {
     const nextUrl = urlInput.trim();
 
     if (!nextUrl) {
@@ -102,14 +138,70 @@ function App() {
     setHomePageUrl(nextUrl);
     setCustomHomePageUrl(nextUrl);
     setHomePageKey(current => current + 1);
+    try {
+      await AsyncStorage.setItem(customHomePageStorageKey, nextUrl);
+    } catch {}
   };
 
-  const resetUrl = () => {
-    setUrlInput(defaultHomePageUrl);
+  const useCustomHomePage = () => {
+    if (!customHomePageUrl) {
+      return;
+    }
+
+    setHomePageUrl(customHomePageUrl);
+    setHomePageKey(current => current + 1);
+    setTopMenuOpen(false);
+  };
+
+  const useDefaultHomePage = () => {
+    setHomePageUrl(defaultHomePageUrl);
+    setHomePageKey(current => current + 1);
+    setTopMenuOpen(false);
+  };
+
+  const selectAdditionalHomePage = (url: string) => {
+    setHomePageUrl(url);
+    setHomePageKey(current => current + 1);
+    setTopMenuOpen(false);
+  };
+
+  const submitAdditionalUrl = async () => {
+    const nextUrl = additionalUrlInput.trim();
+
+    if (!nextUrl || additionalLmsUrls.includes(nextUrl)) {
+      return;
+    }
+
+    const nextUrls = [...additionalLmsUrls, nextUrl];
+    setAdditionalLmsUrls(nextUrls);
+    setAdditionalUrlInput('');
+    try {
+      await AsyncStorage.setItem(additionalLmsStorageKey, JSON.stringify(nextUrls));
+    } catch {}
+  };
+
+  const deleteAdditionalUrl = async () => {
+    if (!urlToDelete) {
+      return;
+    }
+
+    const nextUrls = additionalLmsUrls.filter(url => url !== urlToDelete);
+    setAdditionalLmsUrls(nextUrls);
+    setUrlToDelete(null);
+    try {
+      await AsyncStorage.setItem(additionalLmsStorageKey, JSON.stringify(nextUrls));
+    } catch {}
+  };
+
+  const resetUrl = async () => {
+    setUrlInput('');
     setHomePageUrl(defaultHomePageUrl);
     setCustomHomePageUrl(null);
     setHomePageKey(current => current + 1);
     setTopMenuOpen(false);
+    try {
+      await AsyncStorage.removeItem(customHomePageStorageKey);
+    } catch {}
   };
 
   const buttonRotationStyle = {
@@ -122,7 +214,7 @@ function App() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      {settingsOpen ? (
+      {settingsOpen ? settingsSection === 'main' ? (
         <View style={styles.settingsScreen}>
           <View style={styles.settingsHeader}>
             <Pressable
@@ -134,6 +226,53 @@ function App() {
               <Text style={styles.backButtonText}>Back</Text>
             </Pressable>
             <Text style={styles.settingsTitle}>Settings</Text>
+          </View>
+          <Pressable
+            accessibilityLabel="LMS settings"
+            accessibilityRole="button"
+            onPress={openLmsSettings}
+            style={({ pressed }) => [styles.settingsOption, pressed && styles.menuItemPressed]}
+          >
+            <Text style={styles.settingsOptionTitle}>LMS</Text>
+            <Text style={styles.settingsOptionText}>Homepage and additional LMS</Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Profile settings"
+            accessibilityRole="button"
+            onPress={openProfileSettings}
+            style={({ pressed }) => [styles.settingsOption, pressed && styles.menuItemPressed]}
+          >
+            <Text style={styles.settingsOptionTitle}>Profile</Text>
+            <Text style={styles.settingsOptionText}>Manage your profile</Text>
+          </Pressable>
+        </View>
+      ) : settingsSection === 'profile' ? (
+        <View style={styles.settingsScreen}>
+          <View style={styles.settingsHeader}>
+            <Pressable
+              accessibilityLabel="Back to settings"
+              accessibilityRole="button"
+              onPress={() => setSettingsSection('main')}
+              style={({ pressed }) => [styles.backButton, pressed && styles.menuItemPressed]}
+            >
+              <Text style={styles.backButtonText}>Back</Text>
+            </Pressable>
+            <Text style={styles.settingsTitle}>Profile</Text>
+          </View>
+          <Text style={styles.profilePlaceholder}>Profile settings</Text>
+        </View>
+      ) : (
+        <View style={styles.settingsScreen}>
+          <View style={styles.settingsHeader}>
+            <Pressable
+              accessibilityLabel="Back to settings"
+              accessibilityRole="button"
+              onPress={() => setSettingsSection('main')}
+              style={({ pressed }) => [styles.backButton, pressed && styles.menuItemPressed]}
+            >
+              <Text style={styles.backButtonText}>Back</Text>
+            </Pressable>
+            <Text style={styles.settingsTitle}>LMS</Text>
           </View>
           <Text style={styles.settingsLabel}>Home page URL</Text>
           <TextInput
@@ -162,6 +301,39 @@ function App() {
               <Text style={styles.defaultButtonText}>Default</Text>
             </Pressable>
           </View>
+          <Text style={styles.settingsLabel}>Additional LMS</Text>
+          <TextInput
+            accessibilityLabel="Additional LMS URL"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            onChangeText={setAdditionalUrlInput}
+            placeholder="https://additional-lms.example.com"
+            style={styles.urlInput}
+            value={additionalUrlInput}
+          />
+          <Pressable
+            accessibilityRole="button"
+            onPress={submitAdditionalUrl}
+            style={({ pressed }) => [styles.actionButton, styles.additionalSubmitButton, pressed && styles.actionButtonPressed]}
+          >
+            <Text style={styles.actionButtonText}>Add LMS</Text>
+          </Pressable>
+          <View style={styles.additionalLmsList}>
+            {additionalLmsUrls.map(url => (
+              <View key={url} style={styles.additionalLmsRow}>
+                <Text numberOfLines={2} style={styles.additionalLmsUrl}>{url}</Text>
+                <Pressable
+                  accessibilityLabel={`Delete ${url}`}
+                  accessibilityRole="button"
+                  onPress={() => setUrlToDelete(url)}
+                  style={({ pressed }) => [styles.deleteButton, pressed && styles.actionButtonPressed]}
+                >
+                  <Text style={styles.deleteButtonText}>⌫</Text>
+                </Pressable>
+              </View>
+            ))}
+          </View>
         </View>
       ) : (
         <WebView
@@ -187,7 +359,7 @@ function App() {
               <Pressable
                 accessibilityLabel="Use default LMS"
                 accessibilityRole="button"
-                onPress={resetUrl}
+                onPress={useDefaultHomePage}
                 style={({ pressed }) => [styles.topMenuItem, pressed && styles.topMenuItemPressed]}
               >
                 <Image
@@ -198,9 +370,9 @@ function App() {
               </Pressable>
               {customHomePageUrl && (
                 <Pressable
-                  accessibilityLabel="Customize LMS URL"
+                  accessibilityLabel="Use custom homepage"
                   accessibilityRole="button"
-                  onPress={openSettings}
+                  onPress={useCustomHomePage}
                   style={({ pressed }) => [styles.topMenuItem, pressed && styles.topMenuItemPressed]}
                 >
                   <Image
@@ -210,6 +382,21 @@ function App() {
                   />
                 </Pressable>
               )}
+              {additionalLmsUrls.map(url => (
+                <Pressable
+                  key={url}
+                  accessibilityLabel={`Use ${url}`}
+                  accessibilityRole="button"
+                  onPress={() => selectAdditionalHomePage(url)}
+                  style={({ pressed }) => [styles.topMenuItem, pressed && styles.topMenuItemPressed]}
+                >
+                  <Image
+                    accessibilityLabel={`${url} favicon`}
+                    source={{ uri: getFaviconUrl(url) }}
+                    style={styles.topMenuItemIcon}
+                  />
+                </Pressable>
+              ))}
             </View>
           )}
         </View>
@@ -290,6 +477,35 @@ function App() {
       >
         <Image source={menuIcon} style={styles.centerButtonIcon} resizeMode="contain" />
       </AnimatedPressable>
+      <Modal
+        animationType="fade"
+        transparent
+        visible={urlToDelete !== null}
+        onRequestClose={() => setUrlToDelete(null)}
+      >
+        <View style={styles.confirmationBackdrop}>
+          <View style={styles.confirmationCard}>
+            <Text style={styles.confirmationTitle}>Delete LMS?</Text>
+            <Text numberOfLines={3} style={styles.confirmationText}>{urlToDelete}</Text>
+            <View style={styles.confirmationActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setUrlToDelete(null)}
+                style={({ pressed }) => [styles.cancelButton, pressed && styles.actionButtonPressed]}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={deleteAdditionalUrl}
+                style={({ pressed }) => [styles.confirmButton, pressed && styles.actionButtonPressed]}
+              >
+                <Text style={styles.confirmButtonText}>OK</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -394,6 +610,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
+  settingsOption: {
+    backgroundColor: '#ffffff',
+    borderColor: '#b9dedd',
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 14,
+    padding: 18,
+  },
+  settingsOptionTitle: {
+    color: '#153b75',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  settingsOptionText: {
+    color: '#385675',
+    fontSize: 14,
+    marginTop: 6,
+  },
+  profilePlaceholder: {
+    color: '#385675',
+    fontSize: 16,
+  },
   settingsLabel: {
     color: '#385675',
     fontSize: 15,
@@ -414,6 +652,42 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     marginTop: 16,
+  },
+  additionalSubmitButton: {
+    alignSelf: 'flex-start',
+    flex: 0,
+    marginTop: 12,
+    paddingHorizontal: 24,
+  },
+  additionalLmsList: {
+    gap: 10,
+    marginTop: 18,
+  },
+  additionalLmsRow: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#b9dedd',
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    paddingLeft: 14,
+  },
+  additionalLmsUrl: {
+    color: '#153b75',
+    flex: 1,
+    fontSize: 15,
+    paddingVertical: 12,
+  },
+  deleteButton: {
+    alignItems: 'center',
+    height: 44,
+    justifyContent: 'center',
+    width: 48,
+  },
+  deleteButtonText: {
+    color: '#b42318',
+    fontSize: 23,
+    fontWeight: '700',
   },
   actionButton: {
     alignItems: 'center',
@@ -441,6 +715,68 @@ const styles = StyleSheet.create({
   },
   defaultButtonText: {
     color: '#214497',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  confirmationBackdrop: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(12, 35, 64, 0.35)',
+    flex: 1,
+    justifyContent: 'center',
+    padding: 24,
+  },
+  confirmationCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    elevation: 8,
+    maxWidth: 360,
+    padding: 22,
+    shadowColor: '#153b75',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    width: '100%',
+  },
+  confirmationTitle: {
+    color: '#153b75',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  confirmationText: {
+    color: '#385675',
+    fontSize: 15,
+    marginTop: 10,
+  },
+  confirmationActions: {
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'flex-end',
+    marginTop: 22,
+  },
+  cancelButton: {
+    alignItems: 'center',
+    borderColor: '#214497',
+    borderRadius: 9,
+    borderWidth: 1,
+    minWidth: 90,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+  },
+  cancelButtonText: {
+    color: '#214497',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  confirmButton: {
+    alignItems: 'center',
+    backgroundColor: '#b42318',
+    borderRadius: 9,
+    minWidth: 76,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+  },
+  confirmButtonText: {
+    color: '#ffffff',
     fontSize: 15,
     fontWeight: '700',
   },
