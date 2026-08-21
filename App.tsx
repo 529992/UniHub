@@ -6,17 +6,21 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
 
 const menuIcon = require('./assets/centerButton_icon.png');
-const homePageUrl = 'https://lms.lpec.lk/login/index.php';
+const defaultHomePageUrl = 'https://lms.lpec.lk/login/index.php';
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 function App() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [homePageUrl, setHomePageUrl] = useState(defaultHomePageUrl);
+  const [urlInput, setUrlInput] = useState(defaultHomePageUrl);
   const [homePageKey, setHomePageKey] = useState(0);
   const menuSlide = useRef(new Animated.Value(0)).current;
   const buttonRotation = useRef(new Animated.Value(0)).current;
@@ -63,6 +67,29 @@ function App() {
   const goHome = () => {
     setHomePageKey(current => current + 1);
     closeMenu();
+    setSettingsOpen(false);
+  };
+
+  const openSettings = () => {
+    closeMenu();
+    setSettingsOpen(true);
+  };
+
+  const submitUrl = () => {
+    const nextUrl = urlInput.trim();
+
+    if (!nextUrl) {
+      return;
+    }
+
+    setHomePageUrl(nextUrl);
+    setHomePageKey(current => current + 1);
+  };
+
+  const resetUrl = () => {
+    setUrlInput(defaultHomePageUrl);
+    setHomePageUrl(defaultHomePageUrl);
+    setHomePageKey(current => current + 1);
   };
 
   const buttonRotationStyle = {
@@ -75,13 +102,56 @@ function App() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <WebView
-        key={homePageKey}
-        originWhitelist={['*']}
-        source={{ uri: homePageUrl }}
-        style={styles.webView}
-        showsVerticalScrollIndicator={false}
-      />
+      {settingsOpen ? (
+        <View style={styles.settingsScreen}>
+          <View style={styles.settingsHeader}>
+            <Pressable
+              accessibilityLabel="Back to home"
+              accessibilityRole="button"
+              onPress={() => setSettingsOpen(false)}
+              style={({ pressed }) => [styles.backButton, pressed && styles.menuItemPressed]}
+            >
+              <Text style={styles.backButtonText}>Back</Text>
+            </Pressable>
+            <Text style={styles.settingsTitle}>Settings</Text>
+          </View>
+          <Text style={styles.settingsLabel}>Home page URL</Text>
+          <TextInput
+            accessibilityLabel="Home page URL"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            onChangeText={setUrlInput}
+            placeholder="https://example.com"
+            style={styles.urlInput}
+            value={urlInput}
+          />
+          <View style={styles.settingsActions}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={submitUrl}
+              style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
+            >
+              <Text style={styles.actionButtonText}>Submit</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={resetUrl}
+              style={({ pressed }) => [styles.defaultButton, pressed && styles.actionButtonPressed]}
+            >
+              <Text style={styles.defaultButtonText}>Default</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : (
+        <WebView
+          key={homePageKey}
+          originWhitelist={['*']}
+          source={{ uri: homePageUrl }}
+          style={styles.webView}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
       {menuOpen && (
         <Pressable style={styles.menuBackdrop} onPress={closeMenu}>
           <Animated.View
@@ -141,7 +211,7 @@ function App() {
                 accessibilityLabel="Settings"
                 accessibilityRole="button"
                 style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
-                onPress={closeMenu}
+                onPress={openSettings}
               >
                 <Text style={styles.menuItemIcon}>⚙</Text>
                 <Text style={styles.menuItemText}>Settings</Text>
@@ -169,6 +239,86 @@ const styles = StyleSheet.create({
   },
   webView: {
     flex: 1,
+  },
+  settingsScreen: {
+    backgroundColor: '#f4fbfa',
+    flex: 1,
+    padding: 22,
+  },
+  settingsHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    marginBottom: 34,
+  },
+  backButton: {
+    backgroundColor: '#e9f6f5',
+    borderColor: '#b9dedd',
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  backButtonText: {
+    color: '#153b75',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  settingsTitle: {
+    color: '#153b75',
+    flex: 1,
+    fontSize: 24,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  settingsLabel: {
+    color: '#385675',
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  urlInput: {
+    backgroundColor: '#ffffff',
+    borderColor: '#b9dedd',
+    borderRadius: 10,
+    borderWidth: 1,
+    color: '#153b75',
+    fontSize: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  settingsActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  actionButton: {
+    alignItems: 'center',
+    backgroundColor: '#214497',
+    borderRadius: 10,
+    flex: 1,
+    paddingVertical: 13,
+  },
+  actionButtonPressed: {
+    opacity: 0.8,
+  },
+  actionButtonText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  defaultButton: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#214497',
+    borderRadius: 10,
+    borderWidth: 1,
+    flex: 1,
+    paddingVertical: 13,
+  },
+  defaultButtonText: {
+    color: '#214497',
+    fontSize: 15,
+    fontWeight: '700',
   },
   centerButton: {
     alignItems: 'center',
