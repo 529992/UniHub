@@ -213,7 +213,7 @@ function App() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar backgroundColor="#153b75" barStyle="light-content" />
       {settingsOpen ? settingsSection === 'main' ? (
         <View style={styles.settingsScreen}>
           <View style={styles.settingsHeader}>
@@ -475,7 +475,7 @@ function App() {
         onPress={toggleMenu}
         style={[styles.centerButton, { transform: [buttonRotationStyle] }]}
       >
-        <Image source={menuIcon} style={styles.centerButtonIcon} resizeMode="contain" />
+        <Image source={menuIcon} style={styles.centerButtonIcon} resizeMode="contain" tintColor="#153b75" />
       </AnimatedPressable>
       <Modal
         animationType="fade"
@@ -513,7 +513,7 @@ function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#7ab2b9',
+    backgroundColor: '#153b75',
   },
   webView: {
     flex: 1,
@@ -527,7 +527,7 @@ const styles = StyleSheet.create({
   topMenuButton: {
     alignItems: 'center',
     backgroundColor: '#ffffff',
-    borderColor: '#b9dedd',
+    borderColor: '#153b75',
     borderRadius: 22,
     borderWidth: 1,
     elevation: 5,
@@ -540,7 +540,7 @@ const styles = StyleSheet.create({
     width: 44,
   },
   topMenuButtonPressed: {
-    backgroundColor: '#e9f6f5',
+    backgroundColor: '#b9dedd',
   },
   topMenuButtonIcon: {
     color: '#153b75',
@@ -574,14 +574,14 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   topMenuItemPressed: {
-    backgroundColor: '#e9f6f5',
+    backgroundColor: '#b9dedd',
   },
   topMenuItemIcon: {
     height: 24,
     width: 24,
   },
   settingsScreen: {
-    backgroundColor: '#f4fbfa',
+    backgroundColor: '#ffffff',
     flex: 1,
     padding: 22,
   },
@@ -591,7 +591,7 @@ const styles = StyleSheet.create({
     marginBottom: 34,
   },
   backButton: {
-    backgroundColor: '#e9f6f5',
+    backgroundColor: '#b9dedd',
     borderColor: '#b9dedd',
     borderRadius: 10,
     borderWidth: 1,
@@ -611,7 +611,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   settingsOption: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#efffff',
     borderColor: '#b9dedd',
     borderRadius: 12,
     borderWidth: 1,
@@ -624,16 +624,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   settingsOptionText: {
-    color: '#385675',
+    color: '#153b75',
     fontSize: 14,
     marginTop: 6,
   },
   profilePlaceholder: {
-    color: '#385675',
+    color: '#153b75',
     fontSize: 16,
   },
   settingsLabel: {
-    color: '#385675',
+    color: '#153b75',
     fontSize: 15,
     fontWeight: '600',
     marginBottom: 8,
@@ -691,7 +691,7 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     alignItems: 'center',
-    backgroundColor: '#214497',
+    backgroundColor: '#153b75',
     borderRadius: 10,
     flex: 1,
     paddingVertical: 13,
@@ -707,20 +707,20 @@ const styles = StyleSheet.create({
   defaultButton: {
     alignItems: 'center',
     backgroundColor: '#ffffff',
-    borderColor: '#214497',
+    borderColor: '#153b75',
     borderRadius: 10,
     borderWidth: 1,
     flex: 1,
     paddingVertical: 13,
   },
   defaultButtonText: {
-    color: '#214497',
+    color: '#153b75',
     fontSize: 15,
     fontWeight: '700',
   },
   confirmationBackdrop: {
     alignItems: 'center',
-    backgroundColor: 'rgba(12, 35, 64, 0.35)',
+    backgroundColor: 'rgba(21, 59, 117, 0.35)',
     flex: 1,
     justifyContent: 'center',
     padding: 24,
@@ -743,7 +743,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   confirmationText: {
-    color: '#385675',
+    color: '#153b75',
     fontSize: 15,
     marginTop: 10,
   },
@@ -755,7 +755,7 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     alignItems: 'center',
-    borderColor: '#214497',
+    borderColor: '#153b75',
     borderRadius: 9,
     borderWidth: 1,
     minWidth: 90,
@@ -763,7 +763,7 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
   },
   cancelButtonText: {
-    color: '#214497',
+    color: '#153b75',
     fontSize: 15,
     fontWeight: '700',
   },
@@ -782,8 +782,8 @@ const styles = StyleSheet.create({
   },
   centerButton: {
     alignItems: 'center',
-    backgroundColor: '#c5dfde',
-    borderColor: '#080808',
+    backgroundColor: '#efffff',
+    borderColor: '#153b75',
     borderRadius: 36,
     borderWidth: 3,
     bottom: '6%',
@@ -793,7 +793,7 @@ const styles = StyleSheet.create({
     left: '50%',
     marginLeft: -34,
     position: 'absolute',
-    shadowColor: '#214497',
+    shadowColor: '#153b75',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
     shadowRadius: 6,
@@ -805,7 +805,7 @@ const styles = StyleSheet.create({
   },
   menuBackdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(12, 35, 64, 0.28)',
+    backgroundColor: 'rgba(21, 59, 117, 0.28)',
     justifyContent: 'flex-end',
     paddingBottom: 104,
     paddingHorizontal: 20,
@@ -833,7 +833,7 @@ const styles = StyleSheet.create({
   },
   menuItem: {
     alignItems: 'center',
-    backgroundColor: '#e9f6f5',
+    backgroundColor: '#efffff',
     borderColor: '#b9dedd',
     borderRadius: 14,
     borderWidth: 1,
@@ -849,8 +849,8 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
   },
   menuItemPressed: {
-    backgroundColor: '#c8e9e7',
-    borderColor: '#214497',
+    backgroundColor: '#ffffff',
+    borderColor: '#b9dedd',
     opacity: 0.9,
   },
   menuItemIcon: {
@@ -864,7 +864,7 @@ const styles = StyleSheet.create({
     width: 42,
   },
   menuItemText: {
-    color: '#385675',
+    color: '#153b75',
     fontSize: 14,
     fontWeight: '600',
     marginTop: 6,
