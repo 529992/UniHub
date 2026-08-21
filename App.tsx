@@ -18,8 +18,19 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [homePageKey, setHomePageKey] = useState(0);
-  const menuSlide = useRef(new Animated.Value(0)).current;
-  const buttonRotation = useRef(new Animated.Value(0)).current;
+  const menuSlideRef = useRef<Animated.Value | null>(null);
+  const buttonRotationRef = useRef<Animated.Value | null>(null);
+
+  if (!menuSlideRef.current) {
+    menuSlideRef.current = new Animated.Value(0);
+  }
+
+  if (!buttonRotationRef.current) {
+    buttonRotationRef.current = new Animated.Value(0);
+  }
+
+  const menuSlide = menuSlideRef.current;
+  const buttonRotation = buttonRotationRef.current;
 
   const closeMenu = () => {
     Animated.parallel([
