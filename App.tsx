@@ -45,6 +45,33 @@ const openFreeMapHtml = `
         zoom: 7,
         attributionControl: true
       });
+      const governmentUniversities = [
+        { name: 'University of Colombo', city: 'Colombo', coordinates: [79.8612, 6.9004] },
+        { name: 'University of Peradeniya', city: 'Peradeniya', coordinates: [80.5978, 7.2547] },
+        { name: 'University of Sri Jayewardenepura', city: 'Nugegoda', coordinates: [79.9047, 6.8528] },
+        { name: 'University of Kelaniya', city: 'Kelaniya', coordinates: [79.9150, 6.9747] },
+        { name: 'University of Moratuwa', city: 'Moratuwa', coordinates: [79.9000, 6.7951] },
+        { name: 'University of Jaffna', city: 'Jaffna', coordinates: [80.0180, 9.6850] },
+        { name: 'University of Ruhuna', city: 'Matara', coordinates: [80.5550, 5.9550] },
+        { name: 'Eastern University, Sri Lanka', city: 'Chenkalady', coordinates: [81.5710, 7.7940] },
+        { name: 'South Eastern University of Sri Lanka', city: 'Oluvil', coordinates: [81.8420, 7.2930] },
+        { name: 'Rajarata University of Sri Lanka', city: 'Mihintale', coordinates: [80.5030, 8.3510] },
+        { name: 'Sabaragamuwa University of Sri Lanka', city: 'Belihuloya', coordinates: [80.7890, 6.7160] },
+        { name: 'Wayamba University of Sri Lanka', city: 'Kuliyapitiya', coordinates: [80.0120, 7.4780] },
+        { name: 'Uva Wellassa University', city: 'Badulla', coordinates: [81.0560, 6.9840] },
+        { name: 'University of the Visual & Performing Arts', city: 'Colombo', coordinates: [79.8600, 6.9020] },
+        { name: 'The Open University of Sri Lanka', city: 'Nugegoda', coordinates: [79.8840, 6.8830] },
+        { name: 'Gampaha Wickramarachchi University of Indigenous Medicine', city: 'Yakkala', coordinates: [80.0140, 7.1110] },
+        { name: 'University of Vavuniya', city: 'Vavuniya', coordinates: [80.4980, 8.7530] }
+      ];
+      governmentUniversities.forEach(university => {
+        new maplibregl.Marker({ color: '#16803c' })
+          .setLngLat(university.coordinates)
+          .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(
+            '<strong>' + university.name + '</strong><br>' + university.city
+          ))
+          .addTo(map);
+      });
       let searchMarker;
       window.addEventListener('message', event => {
         const place = JSON.parse(event.data);
