@@ -60,6 +60,7 @@ function App() {
   const [additionalLmsUrls, setAdditionalLmsUrls] = useState<string[]>([]);
   const [additionalUrlInput, setAdditionalUrlInput] = useState('');
   const [urlToDelete, setUrlToDelete] = useState<string | null>(null);
+  const [mapSearchQuery, setMapSearchQuery] = useState('');
   const [homePageKey, setHomePageKey] = useState(0);
   const menuSlideRef = useRef<Animated.Value | null>(null);
   const buttonRotationRef = useRef<Animated.Value | null>(null);
@@ -370,14 +371,36 @@ function App() {
           </View>
         </View>
       ) : activeScreen === 'map' ? (
-        <WebView
-          originWhitelist={['*']}
-          source={{ html: openFreeMapHtml }}
-          style={styles.webView}
-          javaScriptEnabled
-          domStorageEnabled
-          showsVerticalScrollIndicator={false}
-        />
+        <View style={styles.mapScreen}>
+          <WebView
+            originWhitelist={['*']}
+            source={{ html: openFreeMapHtml }}
+            style={styles.webView}
+            javaScriptEnabled
+            domStorageEnabled
+            showsVerticalScrollIndicator={false}
+          />
+          <View style={styles.mapSearchContainer}>
+            <TextInput
+              accessibilityLabel="Search map"
+              autoCapitalize="words"
+              autoCorrect={false}
+              onChangeText={setMapSearchQuery}
+              placeholder="Search map"
+              placeholderTextColor="#6d7b8b"
+              returnKeyType="search"
+              style={styles.mapSearchInput}
+              value={mapSearchQuery}
+            />
+            <Pressable
+              accessibilityLabel="Search map"
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.mapSearchButton, pressed && styles.mapSearchButtonPressed]}
+            >
+              <Text style={styles.mapSearchButtonText}>Search</Text>
+            </Pressable>
+          </View>
+        </View>
       ) : (
         <WebView
           key={homePageKey}
@@ -387,7 +410,7 @@ function App() {
           showsVerticalScrollIndicator={false}
         />
       )}
-      {!settingsOpen && (
+      {!settingsOpen && activeScreen === 'home' && (
         <View style={styles.topMenuContainer}>
           <Pressable
             accessibilityLabel={topMenuOpen ? 'Close LMS menu' : 'Open LMS menu'}
@@ -560,6 +583,49 @@ const styles = StyleSheet.create({
   },
   webView: {
     flex: 1,
+  },
+  mapScreen: {
+    flex: 1,
+  },
+  mapSearchContainer: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#b9dedd',
+    borderRadius: 24,
+    borderWidth: 1,
+    elevation: 5,
+    flexDirection: 'row',
+    left: 16,
+    position: 'absolute',
+    right: 16,
+    shadowColor: '#153b75',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    top: 14,
+    zIndex: 2,
+  },
+  mapSearchInput: {
+    color: '#153b75',
+    fontSize: 16,
+    flex: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+  },
+  mapSearchButton: {
+    backgroundColor: '#153b75',
+    borderRadius: 18,
+    marginRight: 6,
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+  },
+  mapSearchButtonPressed: {
+    backgroundColor: '#2b639c',
+  },
+  mapSearchButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
   },
   topMenuContainer: {
     position: 'absolute',
