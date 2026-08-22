@@ -8,6 +8,7 @@ import {
   Pressable,
   StatusBar,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -64,17 +65,25 @@ const openFreeMapHtml = `
         { name: 'Gampaha Wickramarachchi University of Indigenous Medicine', city: 'Yakkala', coordinates: [80.0140, 7.1110] },
         { name: 'University of Vavuniya', city: 'Vavuniya', coordinates: [80.4980, 8.7530] }
       ];
+      const universityMarkers = [];
       governmentUniversities.forEach(university => {
-        new maplibregl.Marker({ color: '#16803c' })
+        const marker = new maplibregl.Marker({ color: '#16803c' })
           .setLngLat(university.coordinates)
           .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(
             '<strong>' + university.name + '</strong><br>' + university.city
           ))
           .addTo(map);
+        universityMarkers.push(marker);
       });
       let searchMarker;
       window.addEventListener('message', event => {
         const place = JSON.parse(event.data);
+        if (place.type === 'set-universities') {
+          universityMarkers.forEach(marker => {
+            marker.getElement().style.display = place.visible ? '' : 'none';
+          });
+          return;
+        }
         map.flyTo({ center: [place.longitude, place.latitude], zoom: 15 });
         if (searchMarker) searchMarker.remove();
         searchMarker = new maplibregl.Marker({ color: '#b42318' })
@@ -96,7 +105,7 @@ function App() {
   const [activeScreen, setActiveScreen] = useState<'home' | 'map'>('home');
   const [topMenuOpen, setTopMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<'main' | 'lms' | 'profile'>('main');
+  const [settingsSection, setSettingsSection] = useState<'main' | 'lms' | 'profile' | 'map'>('main');
   const [homePageUrl, setHomePageUrl] = useState(defaultHomePageUrl);
   const [customHomePageUrl, setCustomHomePageUrl] = useState<string | null>(null);
   const [urlInput, setUrlInput] = useState('');
@@ -106,6 +115,7 @@ function App() {
   const [mapSearchQuery, setMapSearchQuery] = useState('');
   const [mapSearchResults, setMapSearchResults] = useState<MapPlace[]>([]);
   const [mapSearchLoading, setMapSearchLoading] = useState(false);
+  const [showUniversityMarkers, setShowUniversityMarkers] = useState(true);
   const [homePageKey, setHomePageKey] = useState(0);
   const mapWebViewRef = useRef<ComponentRef<typeof WebView>>(null);
   const skipMapSuggestionsRef = useRef(false);
@@ -253,6 +263,22 @@ function App() {
 
   const openLmsSettings = () => setSettingsSection('lms');
   const openProfileSettings = () => setSettingsSection('profile');
+  const openMapSettings = () => setSettingsSection('map');
+
+  const applyUniversityMarkerSetting = () => {
+    mapWebViewRef.current?.injectJavaScript(`window.postMessage(${JSON.stringify(JSON.stringify({
+      type: 'set-universities',
+      visible: showUniversityMarkers,
+    }))}, '*'); true;`);
+  };
+
+  const toggleUniversityMarkers = (visible: boolean) => {
+    setShowUniversityMarkers(visible);
+    mapWebViewRef.current?.injectJavaScript(`window.postMessage(${JSON.stringify(JSON.stringify({
+      type: 'set-universities',
+      visible,
+    }))}, '*'); true;`);
+  };
 
   const submitUrl = async () => {
     const nextUrl = urlInput.trim();
@@ -399,6 +425,15 @@ function App() {
             <Text style={styles.settingsOptionText}>Homepage and additional LMS</Text>
           </Pressable>
           <Pressable
+            accessibilityLabel="Map settings"
+            accessibilityRole="button"
+            onPress={openMapSettings}
+            style={({ pressed }) => [styles.settingsOption, pressed && styles.menuItemPressed]}
+          >
+            <Text style={styles.settingsOptionTitle}>Map</Text>
+            <Text style={styles.settingsOptionText}>Change map settings</Text>
+          </Pressable>
+          <Pressable
             accessibilityLabel="Profile settings"
             accessibilityRole="button"
             onPress={openProfileSettings}
@@ -422,6 +457,33 @@ function App() {
             <Text style={styles.settingsTitle}>Profile</Text>
           </View>
           <Text style={styles.profilePlaceholder}>Profile settings</Text>
+        </View>
+      ) : settingsSection === 'map' ? (
+        <View style={styles.settingsScreen}>
+          <View style={styles.settingsHeader}>
+            <Pressable
+              accessibilityLabel="Back to settings"
+              accessibilityRole="button"
+              onPress={() => setSettingsSection('main')}
+              style={({ pressed }) => [styles.backButton, pressed && styles.menuItemPressed]}
+            >
+              <Text style={styles.backButtonText}>Back</Text>
+            </Pressable>
+            <Text style={styles.settingsTitle}>Map</Text>
+          </View>
+          <View style={styles.mapSettingRow}>
+            <View style={styles.mapSettingText}>
+              <Text style={styles.settingsOptionTitle}>University markers</Text>
+              <Text style={styles.settingsOptionText}>Show government universities on the map</Text>
+            </View>
+            <Switch
+              accessibilityLabel="Show university markers"
+              onValueChange={toggleUniversityMarkers}
+              thumbColor={showUniversityMarkers ? '#ffffff' : '#6d7b8b'}
+              trackColor={{ false: '#d5dddd', true: '#2b639c' }}
+              value={showUniversityMarkers}
+            />
+          </View>
         </View>
       ) : (
         <View style={styles.settingsScreen}>
@@ -504,6 +566,7 @@ function App() {
             ref={mapWebViewRef}
             source={{ html: openFreeMapHtml }}
             style={styles.webView}
+            onLoadEnd={applyUniversityMarkerSetting}
             javaScriptEnabled
             domStorageEnabled
             showsVerticalScrollIndicator={false}
@@ -928,6 +991,19 @@ const styles = StyleSheet.create({
     color: '#153b75',
     fontSize: 14,
     marginTop: 6,
+  },
+  mapSettingRow: {
+    alignItems: 'center',
+    backgroundColor: '#efffff',
+    borderColor: '#b9dedd',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    padding: 18,
+  },
+  mapSettingText: {
+    flex: 1,
+    paddingRight: 12,
   },
   profilePlaceholder: {
     color: '#153b75',
