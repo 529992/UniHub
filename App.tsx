@@ -57,7 +57,7 @@ const openFreeMapHtml = `
         { name: 'South Eastern University of Sri Lanka', city: 'Oluvil', coordinates: [81.8420, 7.2930] },
         { name: 'Rajarata University of Sri Lanka', city: 'Mihintale', coordinates: [80.5030, 8.3510] },
         { name: 'Sabaragamuwa University of Sri Lanka', city: 'Belihuloya', coordinates: [80.7890, 6.7160] },
-        { name: 'Wayamba University of Sri Lanka', city: 'Kuliyapitiya', coordinates: [80.0120, 7.4780] },
+        { name: 'Wayamba University of Sri Lanka', city: 'Kuliyapitiya', coordinates: [80.0222038, 7.4625961] },
         { name: 'Uva Wellassa University', city: 'Badulla', coordinates: [81.0560, 6.9840] },
         { name: 'University of the Visual & Performing Arts', city: 'Colombo', coordinates: [79.8600, 6.9020] },
         { name: 'The Open University of Sri Lanka', city: 'Nugegoda', coordinates: [79.8840, 6.8830] },
