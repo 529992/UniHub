@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useRef, useState } from 'react';
+import type { ComponentRef } from 'react';
 import {
   Animated,
   Image,
@@ -16,6 +17,12 @@ import WebView from 'react-native-webview';
 
 const menuIcon = require('./assets/centerButton_icon.png');
 const defaultHomePageUrl = 'https://lms.lpec.lk/login/index.php';
+type MapPlace = {
+  display_name: string;
+  lat: string;
+  lon: string;
+  name?: string;
+};
 const openFreeMapHtml = `
 <!DOCTYPE html>
 <html>
@@ -31,12 +38,21 @@ const openFreeMapHtml = `
   <body>
     <div id="map"></div>
     <script>
-      new maplibregl.Map({
+      const map = new maplibregl.Map({
         container: 'map',
         style: 'https://tiles.openfreemap.org/styles/liberty',
         center: [80.7718, 7.8731],
         zoom: 7,
         attributionControl: true
+      });
+      let searchMarker;
+      window.addEventListener('message', event => {
+        const place = JSON.parse(event.data);
+        map.flyTo({ center: [place.longitude, place.latitude], zoom: 15 });
+        if (searchMarker) searchMarker.remove();
+        searchMarker = new maplibregl.Marker({ color: '#b42318' })
+          .setLngLat([place.longitude, place.latitude])
+          .addTo(map);
       });
     </script>
   </body>
@@ -61,7 +77,12 @@ function App() {
   const [additionalUrlInput, setAdditionalUrlInput] = useState('');
   const [urlToDelete, setUrlToDelete] = useState<string | null>(null);
   const [mapSearchQuery, setMapSearchQuery] = useState('');
+  const [mapSearchResults, setMapSearchResults] = useState<MapPlace[]>([]);
+  const [mapSearchLoading, setMapSearchLoading] = useState(false);
   const [homePageKey, setHomePageKey] = useState(0);
+  const mapWebViewRef = useRef<ComponentRef<typeof WebView>>(null);
+  const skipMapSuggestionsRef = useRef(false);
+  const mapSearchRequestRef = useRef(0);
   const menuSlideRef = useRef<Animated.Value | null>(null);
   const buttonRotationRef = useRef<Animated.Value | null>(null);
 
@@ -88,6 +109,49 @@ function App() {
 
     loadCustomHomePage();
   }, []);
+
+  useEffect(() => {
+    if (skipMapSuggestionsRef.current) {
+      skipMapSuggestionsRef.current = false;
+      return;
+    }
+
+    const query = mapSearchQuery.trim();
+    if (query.length < 2) {
+      setMapSearchResults([]);
+      setMapSearchLoading(false);
+      return;
+    }
+
+    const requestId = mapSearchRequestRef.current + 1;
+    mapSearchRequestRef.current = requestId;
+    const timeoutId = setTimeout(async () => {
+      setMapSearchLoading(true);
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=lk&dedupe=1&limit=5&q=${encodeURIComponent(query)}`,
+          { headers: { Accept: 'application/json', 'User-Agent': 'UniHub/1.0' } },
+        );
+        if (!response.ok) {
+          throw new Error(`Map search failed with status ${response.status}`);
+        }
+        const places: unknown = await response.json();
+        if (requestId === mapSearchRequestRef.current) {
+          setMapSearchResults(Array.isArray(places) ? places : []);
+        }
+      } catch {
+        if (requestId === mapSearchRequestRef.current) {
+          setMapSearchResults([]);
+        }
+      } finally {
+        if (requestId === mapSearchRequestRef.current) {
+          setMapSearchLoading(false);
+        }
+      }
+    }, 350);
+
+    return () => clearTimeout(timeoutId);
+  }, [mapSearchQuery]);
 
   if (!menuSlideRef.current) {
     menuSlideRef.current = new Animated.Value(0);
@@ -239,6 +303,42 @@ function App() {
     } catch {}
   };
 
+  const submitMapSearch = async () => {
+    const query = mapSearchQuery.trim();
+
+    if (!query) {
+      setMapSearchResults([]);
+      return;
+    }
+
+    setMapSearchLoading(true);
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=lk&limit=5&q=${encodeURIComponent(query)}`,
+        { headers: { Accept: 'application/json', 'User-Agent': 'UniHub/1.0' } },
+      );
+      if (!response.ok) {
+        throw new Error(`Map search failed with status ${response.status}`);
+      }
+      const places: unknown = await response.json();
+      setMapSearchResults(Array.isArray(places) ? places : []);
+    } catch {
+      setMapSearchResults([]);
+    } finally {
+      setMapSearchLoading(false);
+    }
+  };
+
+  const selectMapPlace = (place: MapPlace) => {
+    skipMapSuggestionsRef.current = true;
+    setMapSearchQuery(place.name || place.display_name.split(',')[0]);
+    setMapSearchResults([]);
+    mapWebViewRef.current?.injectJavaScript(`window.postMessage(${JSON.stringify(JSON.stringify({
+      latitude: Number(place.lat),
+      longitude: Number(place.lon),
+    }))}, '*'); true;`);
+  };
+
   const buttonRotationStyle = {
     rotate: buttonRotation.interpolate({
       inputRange: [0, 1],
@@ -374,6 +474,7 @@ function App() {
         <View style={styles.mapScreen}>
           <WebView
             originWhitelist={['*']}
+            ref={mapWebViewRef}
             source={{ html: openFreeMapHtml }}
             style={styles.webView}
             javaScriptEnabled
@@ -386,6 +487,7 @@ function App() {
               autoCapitalize="words"
               autoCorrect={false}
               onChangeText={setMapSearchQuery}
+              onSubmitEditing={submitMapSearch}
               placeholder="Search map"
               placeholderTextColor="#6d7b8b"
               returnKeyType="search"
@@ -395,11 +497,32 @@ function App() {
             <Pressable
               accessibilityLabel="Search map"
               accessibilityRole="button"
+              onPress={submitMapSearch}
               style={({ pressed }) => [styles.mapSearchButton, pressed && styles.mapSearchButtonPressed]}
             >
               <Text style={styles.mapSearchButtonText}>Search</Text>
             </Pressable>
           </View>
+          {(mapSearchLoading || mapSearchResults.length > 0) && (
+            <View style={styles.mapSearchResults}>
+              {mapSearchLoading ? (
+                <Text style={styles.mapSearchStatus}>Searching...</Text>
+              ) : mapSearchResults.map(place => (
+                <Pressable
+                  accessibilityLabel={`Show ${place.name || place.display_name}`}
+                  accessibilityRole="button"
+                  key={`${place.lat}-${place.lon}-${place.display_name}`}
+                  onPress={() => selectMapPlace(place)}
+                  style={({ pressed }) => [styles.mapSearchResult, pressed && styles.mapSearchResultPressed]}
+                >
+                  <Text numberOfLines={1} style={styles.mapSearchResultTitle}>
+                    {place.name || place.display_name.split(',')[0]}
+                  </Text>
+                  <Text numberOfLines={2} style={styles.mapSearchResultText}>{place.display_name}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
         </View>
       ) : (
         <WebView
@@ -626,6 +749,48 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '700',
+  },
+  mapSearchResults: {
+    backgroundColor: '#ffffff',
+    borderColor: '#b9dedd',
+    borderRadius: 12,
+    borderWidth: 1,
+    elevation: 5,
+    left: 16,
+    overflow: 'hidden',
+    position: 'absolute',
+    right: 16,
+    shadowColor: '#153b75',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    top: 70,
+    zIndex: 2,
+  },
+  mapSearchStatus: {
+    color: '#6d7b8b',
+    fontSize: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  mapSearchResult: {
+    borderBottomColor: '#e3eeee',
+    borderBottomWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+  },
+  mapSearchResultPressed: {
+    backgroundColor: '#efffff',
+  },
+  mapSearchResultTitle: {
+    color: '#153b75',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  mapSearchResultText: {
+    color: '#6d7b8b',
+    fontSize: 12,
+    marginTop: 3,
   },
   topMenuContainer: {
     position: 'absolute',
