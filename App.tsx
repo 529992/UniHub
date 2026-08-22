@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ComponentRef } from 'react';
 import {
   Animated,
@@ -93,14 +93,17 @@ const openFreeMapHtml = `
             '<strong>' + university.name + '</strong><br>' + university.city
           ))
           .addTo(map);
-        universityMarkers.push(marker);
+        universityMarkers.push({ marker, name: university.name });
       });
       let searchMarker;
       window.addEventListener('message', event => {
         const place = JSON.parse(event.data);
         if (place.type === 'set-universities') {
-          universityMarkers.forEach(marker => {
-            marker.getElement().style.display = place.visible ? '' : 'none';
+          universityMarkers.forEach(universityMarker => {
+            const shouldShow = place.visible && (
+              place.mode === 'all' || universityMarker.name === place.selectedUniversity
+            );
+            universityMarker.marker.getElement().style.display = shouldShow ? '' : 'none';
           });
           return;
         }
@@ -116,6 +119,7 @@ const openFreeMapHtml = `
 const customHomePageStorageKey = 'customHomePageUrl';
 const additionalLmsStorageKey = 'additionalLmsUrls';
 const selectedUniversityStorageKey = 'selectedUniversity';
+const universityMarkerModeStorageKey = 'universityMarkerMode';
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 const getFaviconUrl = (url: string) =>
@@ -137,6 +141,7 @@ function App() {
   const [mapSearchResults, setMapSearchResults] = useState<MapPlace[]>([]);
   const [mapSearchLoading, setMapSearchLoading] = useState(false);
   const [showUniversityMarkers, setShowUniversityMarkers] = useState(true);
+  const [universityMarkerMode, setUniversityMarkerMode] = useState<'all' | 'selected'>('all');
   const [selectedUniversity, setSelectedUniversity] = useState('');
   const [universityPickerOpen, setUniversityPickerOpen] = useState(false);
   const [homePageKey, setHomePageKey] = useState(0);
@@ -168,6 +173,11 @@ function App() {
         const savedUniversity = await AsyncStorage.getItem(selectedUniversityStorageKey);
         if (savedUniversity && universityOptions.includes(savedUniversity)) {
           setSelectedUniversity(savedUniversity);
+        }
+
+        const savedMarkerMode = await AsyncStorage.getItem(universityMarkerModeStorageKey);
+        if (savedMarkerMode === 'all' || savedMarkerMode === 'selected') {
+          setUniversityMarkerMode(savedMarkerMode);
         }
       } catch {}
     };
@@ -293,20 +303,29 @@ function App() {
   const openProfileSettings = () => setSettingsSection('profile');
   const openMapSettings = () => setSettingsSection('map');
 
-  const applyUniversityMarkerSetting = () => {
+  const applyUniversityMarkerSetting = useCallback(() => {
     mapWebViewRef.current?.injectJavaScript(`window.postMessage(${JSON.stringify(JSON.stringify({
       type: 'set-universities',
       visible: showUniversityMarkers,
+      mode: universityMarkerMode,
+      selectedUniversity,
     }))}, '*'); true;`);
-  };
+  }, [selectedUniversity, showUniversityMarkers, universityMarkerMode]);
 
   const toggleUniversityMarkers = (visible: boolean) => {
     setShowUniversityMarkers(visible);
-    mapWebViewRef.current?.injectJavaScript(`window.postMessage(${JSON.stringify(JSON.stringify({
-      type: 'set-universities',
-      visible,
-    }))}, '*'); true;`);
   };
+
+  const changeUniversityMarkerMode = async (mode: 'all' | 'selected') => {
+    setUniversityMarkerMode(mode);
+    try {
+      await AsyncStorage.setItem(universityMarkerModeStorageKey, mode);
+    } catch {}
+  };
+
+  useEffect(() => {
+    applyUniversityMarkerSetting();
+  }, [applyUniversityMarkerSetting]);
 
   const submitUniversity = async () => {
     if (!selectedUniversity) {
@@ -576,6 +595,42 @@ function App() {
               value={showUniversityMarkers}
             />
           </View>
+          {showUniversityMarkers && (
+            <View style={styles.universityMarkerOptions}>
+              <Pressable
+                accessibilityLabel="All universities"
+                accessibilityRole="radio"
+                accessibilityState={{ selected: universityMarkerMode === 'all' }}
+                onPress={() => changeUniversityMarkerMode('all')}
+                style={({ pressed }) => [styles.universityMarkerOption, pressed && styles.actionButtonPressed]}
+              >
+                <View style={styles.universityMarkerRadio}>
+                  {universityMarkerMode === 'all' && <View style={styles.universityMarkerRadioSelected} />}
+                </View>
+                <Text style={styles.universityMarkerOptionText}>All universities</Text>
+              </Pressable>
+              <Pressable
+                accessibilityLabel="Your university"
+                accessibilityRole="radio"
+                accessibilityState={{
+                  disabled: !selectedUniversity,
+                  selected: universityMarkerMode === 'selected',
+                }}
+                disabled={!selectedUniversity}
+                onPress={() => changeUniversityMarkerMode('selected')}
+                style={({ pressed }) => [
+                  styles.universityMarkerOption,
+                  !selectedUniversity && styles.universityMarkerOptionDisabled,
+                  pressed && styles.actionButtonPressed,
+                ]}
+              >
+                <View style={styles.universityMarkerRadio}>
+                  {universityMarkerMode === 'selected' && <View style={styles.universityMarkerRadioSelected} />}
+                </View>
+                <Text style={styles.universityMarkerOptionText}>Your university</Text>
+              </Pressable>
+            </View>
+          )}
         </View>
       ) : (
         <View style={styles.settingsScreen}>
@@ -1092,6 +1147,39 @@ const styles = StyleSheet.create({
   mapSettingText: {
     flex: 1,
     paddingRight: 12,
+  },
+  universityMarkerOptions: {
+    gap: 12,
+    marginTop: 4,
+    paddingLeft: 4,
+  },
+  universityMarkerOption: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    minHeight: 32,
+  },
+  universityMarkerOptionDisabled: {
+    opacity: 0.45,
+  },
+  universityMarkerOptionText: {
+    color: '#153b75',
+    fontSize: 15,
+  },
+  universityMarkerRadio: {
+    alignItems: 'center',
+    borderColor: '#2b639c',
+    borderRadius: 10,
+    borderWidth: 2,
+    height: 20,
+    justifyContent: 'center',
+    marginRight: 10,
+    width: 20,
+  },
+  universityMarkerRadioSelected: {
+    backgroundColor: '#2b639c',
+    borderRadius: 5,
+    height: 10,
+    width: 10,
   },
   profilePlaceholder: {
     color: '#153b75',
