@@ -6,6 +6,7 @@ import {
   Image,
   Modal,
   Pressable,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Switch,
@@ -18,6 +19,25 @@ import WebView from 'react-native-webview';
 
 const menuIcon = require('./assets/centerButton_icon.png');
 const defaultHomePageUrl = 'https://lms.lpec.lk/login/index.php';
+const universityOptions = [
+  'University of Colombo',
+  'University of Peradeniya',
+  'University of Sri Jayewardenepura',
+  'University of Kelaniya',
+  'University of Moratuwa',
+  'University of Jaffna',
+  'University of Ruhuna',
+  'Eastern University, Sri Lanka',
+  'South Eastern University of Sri Lanka',
+  'Rajarata University of Sri Lanka',
+  'Sabaragamuwa University of Sri Lanka',
+  'Wayamba University of Sri Lanka',
+  'Uva Wellassa University',
+  'University of the Visual & Performing Arts',
+  'The Open University of Sri Lanka',
+  'Gampaha Wickramarachchi University of Indigenous Medicine',
+  'University of Vavuniya',
+];
 type MapPlace = {
   display_name: string;
   lat: string;
@@ -95,6 +115,7 @@ const openFreeMapHtml = `
 </html>`;
 const customHomePageStorageKey = 'customHomePageUrl';
 const additionalLmsStorageKey = 'additionalLmsUrls';
+const selectedUniversityStorageKey = 'selectedUniversity';
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 const getFaviconUrl = (url: string) =>
@@ -116,6 +137,8 @@ function App() {
   const [mapSearchResults, setMapSearchResults] = useState<MapPlace[]>([]);
   const [mapSearchLoading, setMapSearchLoading] = useState(false);
   const [showUniversityMarkers, setShowUniversityMarkers] = useState(true);
+  const [selectedUniversity, setSelectedUniversity] = useState('');
+  const [universityPickerOpen, setUniversityPickerOpen] = useState(false);
   const [homePageKey, setHomePageKey] = useState(0);
   const mapWebViewRef = useRef<ComponentRef<typeof WebView>>(null);
   const skipMapSuggestionsRef = useRef(false);
@@ -140,6 +163,11 @@ function App() {
           if (Array.isArray(parsedUrls)) {
             setAdditionalLmsUrls(parsedUrls.filter((url): url is string => typeof url === 'string'));
           }
+        }
+
+        const savedUniversity = await AsyncStorage.getItem(selectedUniversityStorageKey);
+        if (savedUniversity && universityOptions.includes(savedUniversity)) {
+          setSelectedUniversity(savedUniversity);
         }
       } catch {}
     };
@@ -278,6 +306,24 @@ function App() {
       type: 'set-universities',
       visible,
     }))}, '*'); true;`);
+  };
+
+  const submitUniversity = async () => {
+    if (!selectedUniversity) {
+      return;
+    }
+
+    try {
+      await AsyncStorage.setItem(selectedUniversityStorageKey, selectedUniversity);
+    } catch {}
+  };
+
+  const deleteUniversity = async () => {
+    setSelectedUniversity('');
+    setUniversityPickerOpen(false);
+    try {
+      await AsyncStorage.removeItem(selectedUniversityStorageKey);
+    } catch {}
   };
 
   const submitUrl = async () => {
@@ -470,6 +516,52 @@ function App() {
               <Text style={styles.backButtonText}>Back</Text>
             </Pressable>
             <Text style={styles.settingsTitle}>Map</Text>
+          </View>
+          <Text style={styles.settingsLabel}>University</Text>
+          <Pressable
+            accessibilityLabel="Select university"
+            accessibilityRole="button"
+            onPress={() => setUniversityPickerOpen(open => !open)}
+            style={({ pressed }) => [styles.universitySelector, pressed && styles.actionButtonPressed]}
+          >
+            <Text style={selectedUniversity ? styles.universitySelectorText : styles.universityPlaceholder}>
+              {selectedUniversity || 'Select a university'}
+            </Text>
+            <Text style={styles.universitySelectorArrow}>{universityPickerOpen ? '▲' : '▼'}</Text>
+          </Pressable>
+          {universityPickerOpen && (
+            <ScrollView style={styles.universityOptions} nestedScrollEnabled>
+              {universityOptions.map(university => (
+                <Pressable
+                  accessibilityLabel={university}
+                  accessibilityRole="button"
+                  key={university}
+                  onPress={() => {
+                    setSelectedUniversity(university);
+                    setUniversityPickerOpen(false);
+                  }}
+                  style={({ pressed }) => [styles.universityOption, pressed && styles.mapSearchResultPressed]}
+                >
+                  <Text style={styles.universityOptionText}>{university}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
+          <View style={styles.settingsActions}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={submitUniversity}
+              style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
+            >
+              <Text style={styles.actionButtonText}>Submit</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={deleteUniversity}
+              style={({ pressed }) => [styles.defaultButton, pressed && styles.actionButtonPressed]}
+            >
+              <Text style={styles.defaultButtonText}>Delete</Text>
+            </Pressable>
           </View>
           <View style={styles.mapSettingRow}>
             <View style={styles.mapSettingText}>
@@ -994,12 +1086,8 @@ const styles = StyleSheet.create({
   },
   mapSettingRow: {
     alignItems: 'center',
-    backgroundColor: '#efffff',
-    borderColor: '#b9dedd',
-    borderRadius: 12,
-    borderWidth: 1,
     flexDirection: 'row',
-    padding: 18,
+    paddingVertical: 18,
   },
   mapSettingText: {
     flex: 1,
@@ -1014,6 +1102,50 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     marginBottom: 8,
+  },
+  universitySelector: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#b9dedd',
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 50,
+    paddingHorizontal: 14,
+  },
+  universitySelectorText: {
+    color: '#153b75',
+    flex: 1,
+    fontSize: 16,
+  },
+  universityPlaceholder: {
+    color: '#6d7b8b',
+    flex: 1,
+    fontSize: 16,
+  },
+  universitySelectorArrow: {
+    color: '#153b75',
+    fontSize: 12,
+    marginLeft: 12,
+  },
+  universityOptions: {
+    backgroundColor: '#ffffff',
+    borderColor: '#b9dedd',
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 6,
+    maxHeight: 260,
+  },
+  universityOption: {
+    borderBottomColor: '#e3eeee',
+    borderBottomWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  universityOptionText: {
+    color: '#153b75',
+    fontSize: 15,
   },
   urlInput: {
     backgroundColor: '#ffffff',
