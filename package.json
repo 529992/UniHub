@@ -3,10 +3,10 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "android": "react-native run-android",
+    "android": "react-native run-android --port 8082",
     "ios": "react-native run-ios",
     "lint": "eslint .",
-    "start": "react-native start",
+    "start": "react-native start --port 8082",
     "test": "jest"
   },
   "dependencies": {
@@ -14,7 +14,10 @@
     "@react-native/new-app-screen": "0.87.0",
     "react": "19.2.3",
     "react-native": "0.87.0",
+    "react-native-nitro-image": "^0.15.2",
+    "react-native-nitro-modules": "^0.37.0",
     "react-native-safe-area-context": "^5.5.2",
+    "react-native-vision-camera": "^5.2.3",
     "react-native-webview": "^14.0.1"
   },
   "devDependencies": {

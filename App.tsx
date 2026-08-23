@@ -16,6 +16,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
+import {
+  Camera,
+  useCameraDevice,
+  useCameraPermission,
+  usePhotoOutput,
+} from 'react-native-vision-camera';
 
 const menuIcon = require('./assets/centerButton_icon.png');
 const defaultHomePageUrl = 'https://lms.lpec.lk/login/index.php';
@@ -164,6 +170,74 @@ const selectedUniversityStorageKey = 'selectedUniversity';
 const universityMarkerModeStorageKey = 'universityMarkerMode';
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
+function ScannerScreen({ onBack }: { onBack: () => void }) {
+  const device = useCameraDevice('back');
+  const photoOutput = usePhotoOutput();
+  const { hasPermission, requestPermission } = useCameraPermission();
+  const [photoPath, setPhotoPath] = useState<string | null>(null);
+  const [isCapturing, setIsCapturing] = useState(false);
+
+  useEffect(() => {
+    if (!hasPermission) {
+      requestPermission();
+    }
+  }, [hasPermission, requestPermission]);
+
+  const takePhoto = async () => {
+    if (!device || isCapturing) {
+      return;
+    }
+
+    setIsCapturing(true);
+    try {
+      const photo = await photoOutput.capturePhotoToFile({}, {});
+      setPhotoPath(photo.filePath);
+    } catch {}
+    setIsCapturing(false);
+  };
+
+  return (
+    <View style={styles.scannerScreen}>
+      <View style={styles.scannerHeader}>
+        <Pressable
+          accessibilityLabel="Back to home"
+          accessibilityRole="button"
+          onPress={onBack}
+          style={({ pressed }) => [styles.backButton, pressed && styles.menuItemPressed]}
+        >
+          <Text style={styles.backButtonText}>Back</Text>
+        </Pressable>
+        <Text style={styles.scannerTitle}>Scanner</Text>
+      </View>
+      <View style={styles.cameraFrame}>
+        {hasPermission && device ? (
+          <Camera device={device} isActive outputs={[photoOutput]} style={styles.camera} />
+        ) : (
+          <Text style={styles.cameraMessage}>
+            {hasPermission ? 'Camera unavailable' : 'Camera permission is required'}
+          </Text>
+        )}
+      </View>
+      <View style={styles.captureControls}>
+        <Pressable
+          accessibilityLabel="Take photo"
+          accessibilityRole="button"
+          disabled={!hasPermission || !device || isCapturing}
+          onPress={takePhoto}
+          style={({ pressed }) => [
+            styles.captureButton,
+            (!hasPermission || !device || isCapturing) && styles.captureButtonDisabled,
+            pressed && styles.actionButtonPressed,
+          ]}
+        >
+          <View style={styles.captureButtonInner} />
+        </Pressable>
+      </View>
+      {photoPath && <Text style={styles.photoStatus}>Photo captured</Text>}
+    </View>
+  );
+}
+
 const getFaviconUrl = (url: string) =>
   `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(url)}&sz=64`;
 
@@ -178,7 +252,7 @@ const getNextSemesterName = (semesters: string[]) => {
 
 function App() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [activeScreen, setActiveScreen] = useState<'home' | 'map' | 'gpa'>('home');
+  const [activeScreen, setActiveScreen] = useState<'home' | 'map' | 'gpa' | 'scanner'>('home');
   const [topMenuOpen, setTopMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<'main' | 'lms' | 'profile' | 'map'>('main');
@@ -361,6 +435,13 @@ function App() {
 
   const openGpa = () => {
     setActiveScreen('gpa');
+    closeMenu();
+    setSettingsOpen(false);
+    setTopMenuOpen(false);
+  };
+
+  const openScanner = () => {
+    setActiveScreen('scanner');
     closeMenu();
     setSettingsOpen(false);
     setTopMenuOpen(false);
@@ -1103,6 +1184,8 @@ function App() {
             })}
           </ScrollView>
         </View>
+      ) : activeScreen === 'scanner' ? (
+        <ScannerScreen onBack={goHome} />
       ) : activeScreen === 'map' ? (
         <View style={styles.mapScreen}>
           <WebView
@@ -1274,7 +1357,7 @@ function App() {
                 accessibilityLabel="Scanner"
                 accessibilityRole="button"
                 style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
-                onPress={closeMenu}
+                onPress={openScanner}
               >
                 <Text style={styles.menuItemIcon}>▣</Text>
                 <Text style={styles.menuItemText}>Scanner</Text>
@@ -1539,6 +1622,73 @@ const styles = StyleSheet.create({
   },
   mapScreen: {
     flex: 1,
+  },
+  scannerScreen: {
+    backgroundColor: '#ffffff',
+    flex: 1,
+    padding: 22,
+  },
+  scannerHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    marginBottom: 18,
+  },
+  scannerTitle: {
+    color: '#153b75',
+    flex: 1,
+    fontSize: 24,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  cameraFrame: {
+    backgroundColor: '#182b3d',
+    borderColor: '#b9dedd',
+    borderRadius: 14,
+    borderWidth: 1,
+    flex: 1,
+    overflow: 'hidden',
+  },
+  camera: {
+    flex: 1,
+  },
+  cameraMessage: {
+    color: '#ffffff',
+    fontSize: 16,
+    padding: 24,
+    textAlign: 'center',
+  },
+  captureControls: {
+    height: 76,
+    position: 'relative',
+  },
+  captureButton: {
+    alignItems: 'center',
+    backgroundColor: '#b9dedd',
+    borderColor: '#153b75',
+    borderRadius: 38,
+    borderWidth: 4,
+    height: 76,
+    justifyContent: 'center',
+    bottom: -10,
+    left: '50%',
+    marginLeft: 90,
+    position: 'absolute',
+    width: 76,
+  },
+  captureButtonDisabled: {
+    opacity: 0.45,
+  },
+  captureButtonInner: {
+    backgroundColor: '#153b75',
+    borderRadius: 27,
+    height: 54,
+    width: 54,
+  },
+  photoStatus: {
+    color: '#16803c',
+    fontSize: 14,
+    marginTop: 10,
+    textAlign: 'center',
   },
   gpaScreen: {
     backgroundColor: '#ffffff',
