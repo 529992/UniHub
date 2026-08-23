@@ -981,6 +981,29 @@ function App() {
               <Text style={styles.deleteButtonText}>⌫</Text>
             </Pressable>
           </View>
+          {(() => {
+            const institutionSubjects = (institutions[selectedInstitution] || []).flatMap(semesterName => (
+              subjects[`${selectedInstitution}::${semesterName}`] || []
+            ));
+            const { credits, gpa } = calculateGpa(institutionSubjects);
+
+            return (
+              <View style={styles.gpaSummary}>
+                <View>
+                  <Text style={styles.gpaSummaryLabel}>Institution GPA</Text>
+                  <Text accessibilityLabel="Institution GPA" style={styles.gpaSummaryValue}>
+                    {gpa === null ? '--' : gpa.toFixed(2)}
+                  </Text>
+                </View>
+                <View style={styles.gpaCreditsSummary}>
+                  <Text style={styles.gpaSummaryLabel}>Total credits</Text>
+                  <Text accessibilityLabel="Institution total credits" style={styles.gpaCreditsValue}>
+                    {credits}
+                  </Text>
+                </View>
+              </View>
+            );
+          })()}
           <Text style={styles.settingsLabel}>Add semester</Text>
           <View style={styles.semesterFormRow}>
             <TextInput
@@ -1003,27 +1026,37 @@ function App() {
             </Pressable>
           </View>
           <ScrollView contentContainerStyle={styles.gpaClassList}>
-            {(institutions[selectedInstitution] || []).map((semesterName, index) => (
-              <View key={`${semesterName}-${index}`} style={styles.gpaClassCard}>
-                <Pressable
-                  accessibilityLabel={`Open ${semesterName}`}
-                  accessibilityRole="button"
-                  onPress={() => setSelectedSemester(semesterName)}
-                  style={styles.semesterCardButton}
-                >
-                  <Text style={styles.gpaClassName}>{semesterName}</Text>
-                  <Text style={styles.institutionArrow}>›</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityLabel={`Delete ${semesterName}`}
-                  accessibilityRole="button"
-                  onPress={() => setSemesterToDelete(semesterName)}
-                  style={({ pressed }) => [styles.deleteButton, pressed && styles.actionButtonPressed]}
-                >
-                  <Text style={styles.deleteButtonText}>⌫</Text>
-                </Pressable>
-              </View>
-            ))}
+            {(institutions[selectedInstitution] || []).map((semesterName, index) => {
+              const semesterSubjects = subjects[`${selectedInstitution}::${semesterName}`] || [];
+              const { credits, gpa } = calculateGpa(semesterSubjects);
+
+              return (
+                <View key={`${semesterName}-${index}`} style={styles.gpaClassCard}>
+                  <Pressable
+                    accessibilityLabel={`Open ${semesterName}`}
+                    accessibilityRole="button"
+                    onPress={() => setSelectedSemester(semesterName)}
+                    style={styles.semesterCardButton}
+                  >
+                    <View style={styles.semesterCardDetails}>
+                      <Text style={styles.gpaClassName}>{semesterName}</Text>
+                      <Text style={styles.semesterSummary}>
+                        GPA {gpa === null ? '--' : gpa.toFixed(2)}  |  {credits} credits
+                      </Text>
+                    </View>
+                    <Text style={styles.institutionArrow}>›</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityLabel={`Delete ${semesterName}`}
+                    accessibilityRole="button"
+                    onPress={() => setSemesterToDelete(semesterName)}
+                    style={({ pressed }) => [styles.deleteButton, pressed && styles.actionButtonPressed]}
+                  >
+                    <Text style={styles.deleteButtonText}>⌫</Text>
+                  </Pressable>
+                </View>
+              );
+            })}
           </ScrollView>
         </View>
       ) : (
@@ -1040,22 +1073,34 @@ function App() {
             </Pressable>
           </View>
           <ScrollView contentContainerStyle={styles.gpaClassList}>
-            {Object.keys(institutions).map(institutionName => (
-              <Pressable
-                accessibilityLabel={`Open ${institutionName}`}
-                accessibilityRole="button"
-                key={institutionName}
-                onPress={() => {
-                  setSelectedInstitution(institutionName);
-                  setSelectedSemester(null);
-                  setSemesterNameInput(getNextSemesterName(institutions[institutionName] || []));
-                }}
-                style={({ pressed }) => [styles.gpaClassCard, pressed && styles.actionButtonPressed]}
-              >
-                <Text style={styles.gpaClassName}>{institutionName}</Text>
-                <Text style={styles.institutionArrow}>›</Text>
-              </Pressable>
-            ))}
+            {Object.keys(institutions).map(institutionName => {
+              const institutionSubjects = (institutions[institutionName] || []).flatMap(semesterName => (
+                subjects[`${institutionName}::${semesterName}`] || []
+              ));
+              const { credits, gpa } = calculateGpa(institutionSubjects);
+
+              return (
+                <Pressable
+                  accessibilityLabel={`Open ${institutionName}`}
+                  accessibilityRole="button"
+                  key={institutionName}
+                  onPress={() => {
+                    setSelectedInstitution(institutionName);
+                    setSelectedSemester(null);
+                    setSemesterNameInput(getNextSemesterName(institutions[institutionName] || []));
+                  }}
+                  style={({ pressed }) => [styles.gpaClassCard, pressed && styles.actionButtonPressed]}
+                >
+                  <View style={styles.institutionDetails}>
+                    <Text style={styles.gpaClassName}>{institutionName}</Text>
+                    <Text style={styles.institutionSummary}>
+                      GPA {gpa === null ? '--' : gpa.toFixed(2)}  |  Total credits {credits}
+                    </Text>
+                  </View>
+                  <Text style={styles.institutionArrow}>›</Text>
+                </Pressable>
+              );
+            })}
           </ScrollView>
         </View>
       ) : activeScreen === 'map' ? (
@@ -1567,7 +1612,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
     flexDirection: 'row',
-    minHeight: 58,
+    minHeight: 72,
+  },
+  semesterCardDetails: {
+    flex: 1,
+    paddingVertical: 11,
+  },
+  semesterSummary: {
+    color: '#6d7b8b',
+    fontSize: 13,
+    marginTop: 5,
   },
   subjectCard: {
     alignItems: 'center',
@@ -1630,6 +1684,15 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 17,
     fontWeight: '600',
+  },
+  institutionDetails: {
+    flex: 1,
+    paddingVertical: 11,
+  },
+  institutionSummary: {
+    color: '#6d7b8b',
+    fontSize: 13,
+    marginTop: 5,
   },
   institutionArrow: {
     color: '#153b75',
