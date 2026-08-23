@@ -125,6 +125,15 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const getFaviconUrl = (url: string) =>
   `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(url)}&sz=64`;
 
+const getNextSemesterName = (semesters: string[]) => {
+  const semesterNumbers = semesters.reduce<number[]>((numbers, semester) => {
+    const match = semester.match(/^Semester (\d+)$/);
+    return match ? [...numbers, Number(match[1])] : numbers;
+  }, []);
+  const nextNumber = semesterNumbers.length > 0 ? Math.max(...semesterNumbers) + 1 : 1;
+  return `Semester ${String(nextNumber).padStart(2, '0')}`;
+};
+
 function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeScreen, setActiveScreen] = useState<'home' | 'map' | 'gpa'>('home');
@@ -144,10 +153,13 @@ function App() {
   const [universityMarkerMode, setUniversityMarkerMode] = useState<'all' | 'selected'>('all');
   const [selectedUniversity, setSelectedUniversity] = useState('');
   const [universityPickerOpen, setUniversityPickerOpen] = useState(false);
-  const [gpaClasses, setGpaClasses] = useState<string[]>([]);
-  const [classNameInput, setClassNameInput] = useState('');
-  const [addClassOpen, setAddClassOpen] = useState(false);
-  const [classToDelete, setClassToDelete] = useState<string | null>(null);
+  const [institutions, setInstitutions] = useState<Record<string, string[]>>({});
+  const [institutionNameInput, setInstitutionNameInput] = useState('');
+  const [semesterNameInput, setSemesterNameInput] = useState('');
+  const [addInstitutionOpen, setAddInstitutionOpen] = useState(false);
+  const [selectedInstitution, setSelectedInstitution] = useState<string | null>(null);
+  const [institutionToDelete, setInstitutionToDelete] = useState<string | null>(null);
+  const [semesterToDelete, setSemesterToDelete] = useState<string | null>(null);
   const [homePageKey, setHomePageKey] = useState(0);
   const mapWebViewRef = useRef<ComponentRef<typeof WebView>>(null);
   const skipMapSuggestionsRef = useRef(false);
@@ -421,25 +433,60 @@ function App() {
     } catch {}
   };
 
-  const submitClass = () => {
-    const className = classNameInput.trim();
+  const submitInstitution = () => {
+    const institutionName = institutionNameInput.trim();
 
-    if (!className) {
+    if (!institutionName || institutions[institutionName]) {
       return;
     }
 
-    setGpaClasses(current => [...current, className]);
-    setClassNameInput('');
-    setAddClassOpen(false);
+    setInstitutions(current => ({ ...current, [institutionName]: [] }));
+    setInstitutionNameInput('');
+    setAddInstitutionOpen(false);
   };
 
-  const deleteClass = () => {
-    if (!classToDelete) {
+  const submitSemester = () => {
+    const semesterName = semesterNameInput.trim();
+
+    if (!selectedInstitution || !semesterName) {
       return;
     }
 
-    setGpaClasses(current => current.filter(className => className !== classToDelete));
-    setClassToDelete(null);
+    setInstitutions(current => ({
+      ...current,
+      [selectedInstitution]: [...(current[selectedInstitution] || []), semesterName],
+    }));
+    setSemesterNameInput(getNextSemesterName([...(institutions[selectedInstitution] || []), semesterName]));
+  };
+
+  const deleteInstitution = () => {
+    if (!institutionToDelete) {
+      return;
+    }
+
+    setInstitutions(current => {
+      const nextInstitutions = { ...current };
+      delete nextInstitutions[institutionToDelete];
+      return nextInstitutions;
+    });
+    setInstitutionToDelete(null);
+    setSelectedInstitution(null);
+  };
+
+  const deleteSemester = () => {
+    if (!selectedInstitution || !semesterToDelete) {
+      return;
+    }
+
+    const remainingSemesters = (institutions[selectedInstitution] || []).filter(
+      semesterName => semesterName !== semesterToDelete,
+    );
+    setInstitutions(current => ({
+      ...current,
+      [selectedInstitution]: remainingSemesters,
+    }));
+    setSemesterNameInput(getNextSemesterName(remainingSemesters));
+    setSemesterToDelete(null);
   };
 
   const resetUrl = async () => {
@@ -738,32 +785,92 @@ function App() {
             ))}
           </View>
         </View>
-      ) : activeScreen === 'gpa' ? (
+      ) : activeScreen === 'gpa' ? selectedInstitution ? (
         <View style={styles.gpaScreen}>
           <View style={styles.gpaHeader}>
-            <Text style={styles.gpaTitle}>GPA</Text>
             <Pressable
-              accessibilityLabel="Add class"
+              accessibilityLabel="Back to GPA institutions"
               accessibilityRole="button"
-              onPress={() => setAddClassOpen(true)}
-              style={({ pressed }) => [styles.actionButton, styles.addClassButton, pressed && styles.actionButtonPressed]}
+              onPress={() => setSelectedInstitution(null)}
+              style={({ pressed }) => [styles.backButton, pressed && styles.menuItemPressed]}
             >
-              <Text style={styles.actionButtonText}>Add class</Text>
+              <Text style={styles.backButtonText}>Back</Text>
+            </Pressable>
+            <Text numberOfLines={1} style={styles.gpaTitle}>{selectedInstitution}</Text>
+            <Pressable
+              accessibilityLabel={`Delete institution ${selectedInstitution}`}
+              accessibilityRole="button"
+              onPress={() => setInstitutionToDelete(selectedInstitution)}
+              style={({ pressed }) => [styles.deleteButton, pressed && styles.actionButtonPressed]}
+            >
+              <Text style={styles.deleteButtonText}>⌫</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.settingsLabel}>Add semester</Text>
+          <View style={styles.semesterFormRow}>
+            <TextInput
+              accessibilityLabel="Semester name"
+              onChangeText={setSemesterNameInput}
+              onSubmitEditing={submitSemester}
+              placeholder="Semester name"
+              placeholderTextColor="#6d7b8b"
+              returnKeyType="done"
+              style={[styles.urlInput, styles.semesterInput]}
+              value={semesterNameInput}
+            />
+            <Pressable
+              accessibilityLabel="Add semester"
+              accessibilityRole="button"
+              onPress={submitSemester}
+              style={({ pressed }) => [styles.actionButton, styles.semesterSubmitButton, pressed && styles.actionButtonPressed]}
+            >
+              <Text style={styles.actionButtonText}>Add</Text>
             </Pressable>
           </View>
           <ScrollView contentContainerStyle={styles.gpaClassList}>
-            {gpaClasses.map((className, index) => (
-              <View key={`${className}-${index}`} style={styles.gpaClassCard}>
-                <Text style={styles.gpaClassName}>{className}</Text>
+            {(institutions[selectedInstitution] || []).map((semesterName, index) => (
+              <View key={`${semesterName}-${index}`} style={styles.gpaClassCard}>
+                <Text style={styles.gpaClassName}>{semesterName}</Text>
                 <Pressable
-                  accessibilityLabel={`Delete ${className}`}
+                  accessibilityLabel={`Delete ${semesterName}`}
                   accessibilityRole="button"
-                  onPress={() => setClassToDelete(className)}
+                  onPress={() => setSemesterToDelete(semesterName)}
                   style={({ pressed }) => [styles.deleteButton, pressed && styles.actionButtonPressed]}
                 >
                   <Text style={styles.deleteButtonText}>⌫</Text>
                 </Pressable>
               </View>
+            ))}
+          </ScrollView>
+        </View>
+      ) : (
+        <View style={styles.gpaScreen}>
+          <View style={styles.gpaHeader}>
+            <Text style={styles.gpaTitle}>GPA</Text>
+            <Pressable
+              accessibilityLabel="Add institution"
+              accessibilityRole="button"
+              onPress={() => setAddInstitutionOpen(true)}
+              style={({ pressed }) => [styles.actionButton, styles.addClassButton, pressed && styles.actionButtonPressed]}
+            >
+              <Text style={styles.actionButtonText}>Add institution</Text>
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={styles.gpaClassList}>
+            {Object.keys(institutions).map(institutionName => (
+              <Pressable
+                accessibilityLabel={`Open ${institutionName}`}
+                accessibilityRole="button"
+                key={institutionName}
+                onPress={() => {
+                  setSelectedInstitution(institutionName);
+                  setSemesterNameInput(getNextSemesterName(institutions[institutionName] || []));
+                }}
+                style={({ pressed }) => [styles.gpaClassCard, pressed && styles.actionButtonPressed]}
+              >
+                <Text style={styles.gpaClassName}>{institutionName}</Text>
+                <Text style={styles.institutionArrow}>›</Text>
+              </Pressable>
             ))}
           </ScrollView>
         </View>
@@ -996,34 +1103,34 @@ function App() {
       <Modal
         animationType="fade"
         transparent
-        visible={addClassOpen}
-        onRequestClose={() => setAddClassOpen(false)}
+        visible={addInstitutionOpen}
+        onRequestClose={() => setAddInstitutionOpen(false)}
       >
         <View style={styles.confirmationBackdrop}>
           <View style={styles.confirmationCard}>
-            <Text style={styles.confirmationTitle}>Add class</Text>
+            <Text style={styles.confirmationTitle}>Add institution</Text>
             <TextInput
-              accessibilityLabel="Class name"
+              accessibilityLabel="Institution name"
               autoFocus
-              onChangeText={setClassNameInput}
-              onSubmitEditing={submitClass}
-              placeholder="Class name"
+              onChangeText={setInstitutionNameInput}
+              onSubmitEditing={submitInstitution}
+              placeholder="Institution name"
               placeholderTextColor="#6d7b8b"
               returnKeyType="done"
               style={styles.urlInput}
-              value={classNameInput}
+              value={institutionNameInput}
             />
             <View style={styles.confirmationActions}>
               <Pressable
                 accessibilityRole="button"
-                onPress={() => setAddClassOpen(false)}
+                onPress={() => setAddInstitutionOpen(false)}
                 style={({ pressed }) => [styles.cancelButton, pressed && styles.actionButtonPressed]}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                onPress={submitClass}
+                onPress={submitInstitution}
                 style={({ pressed }) => [styles.confirmButton, styles.addClassConfirmButton, pressed && styles.actionButtonPressed]}
               >
                 <Text style={styles.confirmButtonText}>Submit</Text>
@@ -1035,24 +1142,53 @@ function App() {
       <Modal
         animationType="fade"
         transparent
-        visible={classToDelete !== null}
-        onRequestClose={() => setClassToDelete(null)}
+        visible={semesterToDelete !== null}
+        onRequestClose={() => setSemesterToDelete(null)}
       >
         <View style={styles.confirmationBackdrop}>
           <View style={styles.confirmationCard}>
-            <Text style={styles.confirmationTitle}>Delete class?</Text>
-            <Text numberOfLines={3} style={styles.confirmationText}>{classToDelete}</Text>
+            <Text style={styles.confirmationTitle}>Delete semester?</Text>
+            <Text numberOfLines={3} style={styles.confirmationText}>{semesterToDelete}</Text>
             <View style={styles.confirmationActions}>
               <Pressable
                 accessibilityRole="button"
-                onPress={() => setClassToDelete(null)}
+                onPress={() => setSemesterToDelete(null)}
                 style={({ pressed }) => [styles.cancelButton, pressed && styles.actionButtonPressed]}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text style={styles.cancelButtonText}>Close</Text>
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                onPress={deleteClass}
+                onPress={deleteSemester}
+                style={({ pressed }) => [styles.confirmButton, pressed && styles.actionButtonPressed]}
+              >
+                <Text style={styles.confirmButtonText}>Continue</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        animationType="fade"
+        transparent
+        visible={institutionToDelete !== null}
+        onRequestClose={() => setInstitutionToDelete(null)}
+      >
+        <View style={styles.confirmationBackdrop}>
+          <View style={styles.confirmationCard}>
+            <Text style={styles.confirmationTitle}>Delete institution?</Text>
+            <Text numberOfLines={3} style={styles.confirmationText}>{institutionToDelete}</Text>
+            <View style={styles.confirmationActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setInstitutionToDelete(null)}
+                style={({ pressed }) => [styles.cancelButton, pressed && styles.actionButtonPressed]}
+              >
+                <Text style={styles.cancelButtonText}>Close</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={deleteInstitution}
                 style={({ pressed }) => [styles.confirmButton, pressed && styles.actionButtonPressed]}
               >
                 <Text style={styles.confirmButtonText}>Continue</Text>
@@ -1096,6 +1232,19 @@ const styles = StyleSheet.create({
     flex: 0,
     paddingHorizontal: 18,
   },
+  semesterSubmitButton: {
+    flex: 0,
+    marginLeft: 8,
+    paddingHorizontal: 16,
+  },
+  semesterFormRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    marginBottom: 20,
+  },
+  semesterInput: {
+    flex: 1,
+  },
   gpaClassList: {
     gap: 12,
     paddingBottom: 24,
@@ -1115,6 +1264,11 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 17,
     fontWeight: '600',
+  },
+  institutionArrow: {
+    color: '#153b75',
+    fontSize: 30,
+    paddingHorizontal: 16,
   },
   mapSearchContainer: {
     alignItems: 'center',
