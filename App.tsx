@@ -127,7 +127,7 @@ const getFaviconUrl = (url: string) =>
 
 function App() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [activeScreen, setActiveScreen] = useState<'home' | 'map'>('home');
+  const [activeScreen, setActiveScreen] = useState<'home' | 'map' | 'gpa'>('home');
   const [topMenuOpen, setTopMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<'main' | 'lms' | 'profile' | 'map'>('main');
@@ -144,6 +144,10 @@ function App() {
   const [universityMarkerMode, setUniversityMarkerMode] = useState<'all' | 'selected'>('all');
   const [selectedUniversity, setSelectedUniversity] = useState('');
   const [universityPickerOpen, setUniversityPickerOpen] = useState(false);
+  const [gpaClasses, setGpaClasses] = useState<string[]>([]);
+  const [classNameInput, setClassNameInput] = useState('');
+  const [addClassOpen, setAddClassOpen] = useState(false);
+  const [classToDelete, setClassToDelete] = useState<string | null>(null);
   const [homePageKey, setHomePageKey] = useState(0);
   const mapWebViewRef = useRef<ComponentRef<typeof WebView>>(null);
   const skipMapSuggestionsRef = useRef(false);
@@ -292,6 +296,13 @@ function App() {
     setTopMenuOpen(false);
   };
 
+  const openGpa = () => {
+    setActiveScreen('gpa');
+    closeMenu();
+    setSettingsOpen(false);
+    setTopMenuOpen(false);
+  };
+
   const openSettings = () => {
     closeMenu();
     setTopMenuOpen(false);
@@ -408,6 +419,27 @@ function App() {
     try {
       await AsyncStorage.setItem(additionalLmsStorageKey, JSON.stringify(nextUrls));
     } catch {}
+  };
+
+  const submitClass = () => {
+    const className = classNameInput.trim();
+
+    if (!className) {
+      return;
+    }
+
+    setGpaClasses(current => [...current, className]);
+    setClassNameInput('');
+    setAddClassOpen(false);
+  };
+
+  const deleteClass = () => {
+    if (!classToDelete) {
+      return;
+    }
+
+    setGpaClasses(current => current.filter(className => className !== classToDelete));
+    setClassToDelete(null);
   };
 
   const resetUrl = async () => {
@@ -706,6 +738,35 @@ function App() {
             ))}
           </View>
         </View>
+      ) : activeScreen === 'gpa' ? (
+        <View style={styles.gpaScreen}>
+          <View style={styles.gpaHeader}>
+            <Text style={styles.gpaTitle}>GPA</Text>
+            <Pressable
+              accessibilityLabel="Add class"
+              accessibilityRole="button"
+              onPress={() => setAddClassOpen(true)}
+              style={({ pressed }) => [styles.actionButton, styles.addClassButton, pressed && styles.actionButtonPressed]}
+            >
+              <Text style={styles.actionButtonText}>Add class</Text>
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={styles.gpaClassList}>
+            {gpaClasses.map((className, index) => (
+              <View key={`${className}-${index}`} style={styles.gpaClassCard}>
+                <Text style={styles.gpaClassName}>{className}</Text>
+                <Pressable
+                  accessibilityLabel={`Delete ${className}`}
+                  accessibilityRole="button"
+                  onPress={() => setClassToDelete(className)}
+                  style={({ pressed }) => [styles.deleteButton, pressed && styles.actionButtonPressed]}
+                >
+                  <Text style={styles.deleteButtonText}>⌫</Text>
+                </Pressable>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
       ) : activeScreen === 'map' ? (
         <View style={styles.mapScreen}>
           <WebView
@@ -868,7 +929,7 @@ function App() {
                 accessibilityLabel="GPA"
                 accessibilityRole="button"
                 style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
-                onPress={closeMenu}
+                onPress={openGpa}
               >
                 <Text style={styles.menuItemIcon}>A+</Text>
                 <Text style={styles.menuItemText}>GPA</Text>
@@ -932,6 +993,74 @@ function App() {
           </View>
         </View>
       </Modal>
+      <Modal
+        animationType="fade"
+        transparent
+        visible={addClassOpen}
+        onRequestClose={() => setAddClassOpen(false)}
+      >
+        <View style={styles.confirmationBackdrop}>
+          <View style={styles.confirmationCard}>
+            <Text style={styles.confirmationTitle}>Add class</Text>
+            <TextInput
+              accessibilityLabel="Class name"
+              autoFocus
+              onChangeText={setClassNameInput}
+              onSubmitEditing={submitClass}
+              placeholder="Class name"
+              placeholderTextColor="#6d7b8b"
+              returnKeyType="done"
+              style={styles.urlInput}
+              value={classNameInput}
+            />
+            <View style={styles.confirmationActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setAddClassOpen(false)}
+                style={({ pressed }) => [styles.cancelButton, pressed && styles.actionButtonPressed]}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={submitClass}
+                style={({ pressed }) => [styles.confirmButton, styles.addClassConfirmButton, pressed && styles.actionButtonPressed]}
+              >
+                <Text style={styles.confirmButtonText}>Submit</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        animationType="fade"
+        transparent
+        visible={classToDelete !== null}
+        onRequestClose={() => setClassToDelete(null)}
+      >
+        <View style={styles.confirmationBackdrop}>
+          <View style={styles.confirmationCard}>
+            <Text style={styles.confirmationTitle}>Delete class?</Text>
+            <Text numberOfLines={3} style={styles.confirmationText}>{classToDelete}</Text>
+            <View style={styles.confirmationActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setClassToDelete(null)}
+                style={({ pressed }) => [styles.cancelButton, pressed && styles.actionButtonPressed]}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={deleteClass}
+                style={({ pressed }) => [styles.confirmButton, pressed && styles.actionButtonPressed]}
+              >
+                <Text style={styles.confirmButtonText}>Continue</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -946,6 +1075,46 @@ const styles = StyleSheet.create({
   },
   mapScreen: {
     flex: 1,
+  },
+  gpaScreen: {
+    backgroundColor: '#ffffff',
+    flex: 1,
+    padding: 22,
+  },
+  gpaHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    marginBottom: 20,
+  },
+  gpaTitle: {
+    color: '#153b75',
+    flex: 1,
+    fontSize: 28,
+    fontWeight: '700',
+  },
+  addClassButton: {
+    flex: 0,
+    paddingHorizontal: 18,
+  },
+  gpaClassList: {
+    gap: 12,
+    paddingBottom: 24,
+  },
+  gpaClassCard: {
+    alignItems: 'center',
+    backgroundColor: '#efffff',
+    borderColor: '#b9dedd',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    minHeight: 58,
+    paddingLeft: 16,
+  },
+  gpaClassName: {
+    color: '#153b75',
+    flex: 1,
+    fontSize: 17,
+    fontWeight: '600',
   },
   mapSearchContainer: {
     alignItems: 'center',
@@ -1371,6 +1540,9 @@ const styles = StyleSheet.create({
     minWidth: 76,
     paddingHorizontal: 16,
     paddingVertical: 11,
+  },
+  addClassConfirmButton: {
+    backgroundColor: '#153b75',
   },
   confirmButtonText: {
     color: '#ffffff',
