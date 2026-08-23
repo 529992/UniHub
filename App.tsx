@@ -50,6 +50,42 @@ type Subject = {
   grade: string;
   credit: string;
 };
+const gradePoints: Record<string, number> = {
+  A: 4,
+  'A-': 3.7,
+  'B+': 3.3,
+  B: 3,
+  'B-': 2.7,
+  'C+': 2.3,
+  C: 2,
+  'C-': 1.7,
+  'D+': 1.3,
+  D: 1,
+  E: 0,
+  F: 0,
+};
+
+const calculateGpa = (semesterSubjects: Subject[]) => {
+  const totals = semesterSubjects.reduce(
+    (result, subject) => {
+      const credit = Number(subject.credit);
+      const gradePoint = gradePoints[subject.grade];
+      if (!Number.isFinite(credit) || credit <= 0 || gradePoint === undefined) {
+        return result;
+      }
+      return {
+        credits: result.credits + credit,
+        qualityPoints: result.qualityPoints + gradePoint * credit,
+      };
+    },
+    { credits: 0, qualityPoints: 0 },
+  );
+
+  return {
+    credits: totals.credits,
+    gpa: totals.credits > 0 ? totals.qualityPoints / totals.credits : null,
+  };
+};
 const openFreeMapHtml = `
 <!DOCTYPE html>
 <html>
@@ -875,8 +911,27 @@ function App() {
               <Text style={styles.actionButtonText}>Add subject</Text>
             </Pressable>
           </View>
-          <ScrollView contentContainerStyle={styles.gpaClassList}>
-            {(subjects[getSemesterKey(selectedSemester)] || []).map(subject => (
+            {(() => {
+              const semesterSubjects = subjects[getSemesterKey(selectedSemester)] || [];
+              const { credits, gpa } = calculateGpa(semesterSubjects);
+              return (
+                <>
+                  <View style={styles.gpaSummary}>
+                    <View>
+                      <Text style={styles.gpaSummaryLabel}>Semester GPA</Text>
+                      <Text accessibilityLabel="Semester GPA" style={styles.gpaSummaryValue}>
+                        {gpa === null ? '--' : gpa.toFixed(2)}
+                      </Text>
+                    </View>
+                    <View style={styles.gpaCreditsSummary}>
+                      <Text style={styles.gpaSummaryLabel}>Total credits</Text>
+                      <Text accessibilityLabel="Total credits" style={styles.gpaCreditsValue}>
+                        {credits}
+                      </Text>
+                    </View>
+                  </View>
+                  <ScrollView contentContainerStyle={styles.gpaClassList}>
+                    {semesterSubjects.map(subject => (
               <View key={subject.id} style={styles.subjectCard}>
                 <View style={styles.subjectDetails}>
                   <Text style={styles.gpaClassName}>{subject.name}</Text>
@@ -899,8 +954,11 @@ function App() {
                   <Text style={styles.deleteButtonText}>⌫</Text>
                 </Pressable>
               </View>
-            ))}
-          </ScrollView>
+                  ))}
+                </ScrollView>
+              </>
+            );
+          })()}
         </View>
       ) : selectedInstitution ? (
         <View style={styles.gpaScreen}>
@@ -1452,6 +1510,37 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 28,
     fontWeight: '700',
+  },
+  gpaSummary: {
+    alignItems: 'center',
+    backgroundColor: '#efffff',
+    borderColor: '#b9dedd',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  gpaSummaryLabel: {
+    color: '#153b75',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  gpaSummaryValue: {
+    color: '#16803c',
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  gpaCreditsSummary: {
+    alignItems: 'flex-end',
+  },
+  gpaCreditsValue: {
+    color: '#153b75',
+    fontSize: 20,
+    fontWeight: '700',
+    marginTop: 2,
   },
   addClassButton: {
     flex: 0,
