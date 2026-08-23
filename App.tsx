@@ -44,6 +44,12 @@ type MapPlace = {
   lon: string;
   name?: string;
 };
+type Subject = {
+  id: string;
+  name: string;
+  grade: string;
+  credit: string;
+};
 const openFreeMapHtml = `
 <!DOCTYPE html>
 <html>
@@ -158,6 +164,15 @@ function App() {
   const [semesterNameInput, setSemesterNameInput] = useState('');
   const [addInstitutionOpen, setAddInstitutionOpen] = useState(false);
   const [selectedInstitution, setSelectedInstitution] = useState<string | null>(null);
+  const [selectedSemester, setSelectedSemester] = useState<string | null>(null);
+  const [subjects, setSubjects] = useState<Record<string, Subject[]>>({});
+  const [subjectFormOpen, setSubjectFormOpen] = useState(false);
+  const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
+  const [subjectNameInput, setSubjectNameInput] = useState('');
+  const [subjectGradeInput, setSubjectGradeInput] = useState('A');
+  const [subjectCreditInput, setSubjectCreditInput] = useState('');
+  const [gradePickerOpen, setGradePickerOpen] = useState(false);
+  const [subjectToDelete, setSubjectToDelete] = useState<Subject | null>(null);
   const [institutionToDelete, setInstitutionToDelete] = useState<string | null>(null);
   const [semesterToDelete, setSemesterToDelete] = useState<string | null>(null);
   const [homePageKey, setHomePageKey] = useState(0);
@@ -489,6 +504,60 @@ function App() {
     setSemesterToDelete(null);
   };
 
+  const getSemesterKey = (semesterName: string) => `${selectedInstitution}::${semesterName}`;
+
+  const openAddSubject = () => {
+    setEditingSubjectId(null);
+    setSubjectNameInput('');
+    setSubjectGradeInput('A');
+    setSubjectCreditInput('');
+    setGradePickerOpen(false);
+    setSubjectFormOpen(true);
+  };
+
+  const openEditSubject = (subject: Subject) => {
+    setEditingSubjectId(subject.id);
+    setSubjectNameInput(subject.name);
+    setSubjectGradeInput(subject.grade);
+    setSubjectCreditInput(subject.credit);
+    setGradePickerOpen(false);
+    setSubjectFormOpen(true);
+  };
+
+  const submitSubject = () => {
+    if (!selectedSemester || !subjectNameInput.trim() || !subjectCreditInput.trim()) {
+      return;
+    }
+
+    const semesterKey = getSemesterKey(selectedSemester);
+    const subject = {
+      id: editingSubjectId || `${Date.now()}`,
+      name: subjectNameInput.trim(),
+      grade: subjectGradeInput,
+      credit: subjectCreditInput.trim(),
+    };
+    setSubjects(current => ({
+      ...current,
+      [semesterKey]: editingSubjectId
+        ? (current[semesterKey] || []).map(item => item.id === editingSubjectId ? subject : item)
+        : [...(current[semesterKey] || []), subject],
+    }));
+    setSubjectFormOpen(false);
+  };
+
+  const deleteSubject = () => {
+    if (!selectedSemester || !subjectToDelete) {
+      return;
+    }
+
+    const semesterKey = getSemesterKey(selectedSemester);
+    setSubjects(current => ({
+      ...current,
+      [semesterKey]: (current[semesterKey] || []).filter(subject => subject.id !== subjectToDelete.id),
+    }));
+    setSubjectToDelete(null);
+  };
+
   const resetUrl = async () => {
     setUrlInput('');
     setHomePageUrl(defaultHomePageUrl);
@@ -785,7 +854,55 @@ function App() {
             ))}
           </View>
         </View>
-      ) : activeScreen === 'gpa' ? selectedInstitution ? (
+      ) : activeScreen === 'gpa' ? selectedInstitution && selectedSemester ? (
+        <View style={styles.gpaScreen}>
+          <View style={styles.gpaHeader}>
+            <Pressable
+              accessibilityLabel="Back to semesters"
+              accessibilityRole="button"
+              onPress={() => setSelectedSemester(null)}
+              style={({ pressed }) => [styles.backButton, pressed && styles.menuItemPressed]}
+            >
+              <Text style={styles.backButtonText}>Back</Text>
+            </Pressable>
+            <Text numberOfLines={1} style={styles.gpaTitle}>{selectedSemester}</Text>
+            <Pressable
+              accessibilityLabel="Add subject"
+              accessibilityRole="button"
+              onPress={openAddSubject}
+              style={({ pressed }) => [styles.actionButton, styles.addSubjectButton, pressed && styles.actionButtonPressed]}
+            >
+              <Text style={styles.actionButtonText}>Add subject</Text>
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={styles.gpaClassList}>
+            {(subjects[getSemesterKey(selectedSemester)] || []).map(subject => (
+              <View key={subject.id} style={styles.subjectCard}>
+                <View style={styles.subjectDetails}>
+                  <Text style={styles.gpaClassName}>{subject.name}</Text>
+                  <Text style={styles.subjectMeta}>Grade {subject.grade}  |  {subject.credit} credits</Text>
+                </View>
+                <Pressable
+                  accessibilityLabel={`Edit ${subject.name}`}
+                  accessibilityRole="button"
+                  onPress={() => openEditSubject(subject)}
+                  style={({ pressed }) => [styles.editButton, pressed && styles.actionButtonPressed]}
+                >
+                  <Text style={styles.editButtonText}>Edit</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityLabel={`Delete ${subject.name}`}
+                  accessibilityRole="button"
+                  onPress={() => setSubjectToDelete(subject)}
+                  style={({ pressed }) => [styles.deleteButton, pressed && styles.actionButtonPressed]}
+                >
+                  <Text style={styles.deleteButtonText}>⌫</Text>
+                </Pressable>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      ) : selectedInstitution ? (
         <View style={styles.gpaScreen}>
           <View style={styles.gpaHeader}>
             <Pressable
@@ -830,7 +947,15 @@ function App() {
           <ScrollView contentContainerStyle={styles.gpaClassList}>
             {(institutions[selectedInstitution] || []).map((semesterName, index) => (
               <View key={`${semesterName}-${index}`} style={styles.gpaClassCard}>
-                <Text style={styles.gpaClassName}>{semesterName}</Text>
+                <Pressable
+                  accessibilityLabel={`Open ${semesterName}`}
+                  accessibilityRole="button"
+                  onPress={() => setSelectedSemester(semesterName)}
+                  style={styles.semesterCardButton}
+                >
+                  <Text style={styles.gpaClassName}>{semesterName}</Text>
+                  <Text style={styles.institutionArrow}>›</Text>
+                </Pressable>
                 <Pressable
                   accessibilityLabel={`Delete ${semesterName}`}
                   accessibilityRole="button"
@@ -864,6 +989,7 @@ function App() {
                 key={institutionName}
                 onPress={() => {
                   setSelectedInstitution(institutionName);
+                  setSelectedSemester(null);
                   setSemesterNameInput(getNextSemesterName(institutions[institutionName] || []));
                 }}
                 style={({ pressed }) => [styles.gpaClassCard, pressed && styles.actionButtonPressed]}
@@ -1074,6 +1200,105 @@ function App() {
       <Modal
         animationType="fade"
         transparent
+        visible={subjectFormOpen}
+        onRequestClose={() => setSubjectFormOpen(false)}
+      >
+        <View style={styles.confirmationBackdrop}>
+          <View style={styles.confirmationCard}>
+            <Text style={styles.confirmationTitle}>{editingSubjectId ? 'Edit subject' : 'Add subject'}</Text>
+            <TextInput
+              accessibilityLabel="Subject name"
+              autoFocus
+              onChangeText={setSubjectNameInput}
+              placeholder="Subject name"
+              placeholderTextColor="#6d7b8b"
+              style={styles.urlInput}
+              value={subjectNameInput}
+            />
+            <Pressable
+              accessibilityLabel="Grade"
+              accessibilityRole="button"
+              onPress={() => setGradePickerOpen(open => !open)}
+              style={styles.universitySelector}
+            >
+              <Text style={styles.universitySelectorText}>Grade: {subjectGradeInput}</Text>
+              <Text style={styles.universitySelectorArrow}>{gradePickerOpen ? '▲' : '▼'}</Text>
+            </Pressable>
+            {gradePickerOpen && (
+              <View style={styles.gradeOptions}>
+                {['A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'E'].map(grade => (
+                  <Pressable
+                    accessibilityLabel={`Grade ${grade}`}
+                    accessibilityRole="button"
+                    key={grade}
+                    onPress={() => { setSubjectGradeInput(grade); setGradePickerOpen(false); }}
+                    style={styles.gradeOption}
+                  >
+                    <Text style={styles.universityOptionText}>{grade}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+            <TextInput
+              accessibilityLabel="Credit"
+              keyboardType="decimal-pad"
+              onChangeText={setSubjectCreditInput}
+              placeholder="Credit"
+              placeholderTextColor="#6d7b8b"
+              style={styles.urlInput}
+              value={subjectCreditInput}
+            />
+            <View style={styles.confirmationActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setSubjectFormOpen(false)}
+                style={({ pressed }) => [styles.cancelButton, pressed && styles.actionButtonPressed]}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={submitSubject}
+                style={({ pressed }) => [styles.confirmButton, pressed && styles.actionButtonPressed]}
+              >
+                <Text style={styles.confirmButtonText}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        animationType="fade"
+        transparent
+        visible={subjectToDelete !== null}
+        onRequestClose={() => setSubjectToDelete(null)}
+      >
+        <View style={styles.confirmationBackdrop}>
+          <View style={styles.confirmationCard}>
+            <Text style={styles.confirmationTitle}>Delete subject?</Text>
+            <Text numberOfLines={3} style={styles.confirmationText}>{subjectToDelete?.name}</Text>
+            <View style={styles.confirmationActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setSubjectToDelete(null)}
+                style={({ pressed }) => [styles.cancelButton, pressed && styles.actionButtonPressed]}
+              >
+                <Text style={styles.cancelButtonText}>Continue</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={deleteSubject}
+                style={({ pressed }) => [styles.confirmButton, pressed && styles.actionButtonPressed]}
+              >
+                <Text style={styles.confirmButtonText}>Delete</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        animationType="fade"
+        transparent
         visible={urlToDelete !== null}
         onRequestClose={() => setUrlToDelete(null)}
       >
@@ -1232,6 +1457,10 @@ const styles = StyleSheet.create({
     flex: 0,
     paddingHorizontal: 18,
   },
+  addSubjectButton: {
+    flex: 0,
+    paddingHorizontal: 12,
+  },
   semesterSubmitButton: {
     flex: 0,
     marginLeft: 8,
@@ -1244,6 +1473,54 @@ const styles = StyleSheet.create({
   },
   semesterInput: {
     flex: 1,
+  },
+  semesterCardButton: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    minHeight: 58,
+  },
+  subjectCard: {
+    alignItems: 'center',
+    backgroundColor: '#efffff',
+    borderColor: '#b9dedd',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    minHeight: 72,
+    paddingLeft: 16,
+  },
+  subjectDetails: {
+    flex: 1,
+    paddingVertical: 12,
+  },
+  subjectMeta: {
+    color: '#6d7b8b',
+    fontSize: 13,
+    marginTop: 5,
+  },
+  editButton: {
+    backgroundColor: '#b9dedd',
+    borderRadius: 8,
+    marginRight: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+  },
+  editButtonText: {
+    color: '#153b75',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  gradeOptions: {
+    borderColor: '#b9dedd',
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  gradeOption: {
+    borderBottomColor: '#e3eeee',
+    borderBottomWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   gpaClassList: {
     gap: 12,
