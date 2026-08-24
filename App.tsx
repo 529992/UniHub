@@ -16,13 +16,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import scanDocument from 'react-native-document-scanner-plugin';
 import WebView from 'react-native-webview';
-import {
-  Camera,
-  useCameraDevice,
-  useCameraPermission,
-  usePhotoOutput,
-} from 'react-native-vision-camera';
 
 const menuIcon = require('./assets/centerButton_icon.png');
 const defaultHomePageUrl = 'https://lms.lpec.lk/login/index.php';
@@ -177,31 +172,27 @@ const { UniHubFileStore } = NativeModules as {
 };
 
 function ScannerScreen({ onBack, onContinue }: { onBack: () => void; onContinue: (photoPaths: string[]) => void }) {
-  const device = useCameraDevice('back');
-  const photoOutput = usePhotoOutput();
-  const { hasPermission, requestPermission } = useCameraPermission();
   const [photoPaths, setPhotoPaths] = useState<string[]>([]);
   const [photoStatus, setPhotoStatus] = useState<string | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
 
-  useEffect(() => {
-    if (!hasPermission) {
-      requestPermission();
-    }
-  }, [hasPermission, requestPermission]);
-
-  const takePhoto = async () => {
-    if (!device || isCapturing) {
+  const scanPages = async () => {
+    if (isCapturing) {
       return;
     }
 
     setIsCapturing(true);
+    setPhotoStatus(null);
     try {
-      const photo = await photoOutput.capturePhotoToFile({}, {});
-      setPhotoPaths(current => [...current, photo.filePath]);
-      setPhotoStatus(null);
+      const result = await scanDocument.scanDocument({ maxNumDocuments: 20 });
+      const scannedPaths = (result.scannedImages ?? []).map((path: string) =>
+        path.startsWith('file://') ? path.slice('file://'.length) : path,
+      );
+      if (scannedPaths.length > 0) {
+        setPhotoPaths(current => [...current, ...scannedPaths]);
+      }
     } catch {
-      setPhotoStatus('Unable to capture photo');
+      setPhotoStatus('Unable to scan document');
     } finally {
       setIsCapturing(false);
     }
@@ -221,13 +212,9 @@ function ScannerScreen({ onBack, onContinue }: { onBack: () => void; onContinue:
         <Text style={styles.scannerTitle}>Scanner</Text>
       </View>
       <View style={styles.cameraFrame}>
-        {hasPermission && device ? (
-          <Camera device={device} isActive outputs={[photoOutput]} style={styles.camera} />
-        ) : (
-          <Text style={styles.cameraMessage}>
-            {hasPermission ? 'Camera unavailable' : 'Camera permission is required'}
-          </Text>
-        )}
+        <Text style={styles.cameraMessage}>
+          Tap the capture button to scan. The document edges will be detected and aligned automatically.
+        </Text>
       </View>
       <View style={styles.captureControls}>
         {photoPaths.length > 0 && (
@@ -241,13 +228,13 @@ function ScannerScreen({ onBack, onContinue }: { onBack: () => void; onContinue:
           </Pressable>
         )}
         <Pressable
-          accessibilityLabel="Take photo"
+          accessibilityLabel="Scan document"
           accessibilityRole="button"
-          disabled={!hasPermission || !device || isCapturing}
-          onPress={takePhoto}
+          disabled={isCapturing}
+          onPress={scanPages}
           style={({ pressed }) => [
             styles.captureButton,
-            (!hasPermission || !device || isCapturing) && styles.captureButtonDisabled,
+            isCapturing && styles.captureButtonDisabled,
             pressed && styles.actionButtonPressed,
           ]}
         >
@@ -1774,9 +1761,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flex: 1,
     overflow: 'hidden',
-  },
-  camera: {
-    flex: 1,
   },
   cameraMessage: {
     color: '#ffffff',
