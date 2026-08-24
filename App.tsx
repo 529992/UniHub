@@ -171,79 +171,41 @@ const { UniHubFileStore } = NativeModules as {
   };
 };
 
-function ScannerScreen({ onBack, onContinue }: { onBack: () => void; onContinue: (photoPaths: string[]) => void }) {
-  const [photoPaths, setPhotoPaths] = useState<string[]>([]);
-  const [photoStatus, setPhotoStatus] = useState<string | null>(null);
-  const [isCapturing, setIsCapturing] = useState(false);
+function ScannerScreen({
+  autoStart,
+  onBack,
+  onContinue,
+}: {
+  autoStart: boolean;
+  onBack: () => void;
+  onContinue: (photoPaths: string[]) => void;
+}) {
+  const hasAutoStarted = useRef(false);
 
-  const scanPages = async () => {
-    if (isCapturing) {
-      return;
-    }
-
-    setIsCapturing(true);
-    setPhotoStatus(null);
+  const scanPages = useCallback(async () => {
     try {
       const result = await scanDocument.scanDocument({ maxNumDocuments: 20 });
       const scannedPaths = (result.scannedImages ?? []).map((path: string) =>
         path.startsWith('file://') ? path.slice('file://'.length) : path,
       );
       if (scannedPaths.length > 0) {
-        setPhotoPaths(current => [...current, ...scannedPaths]);
+        onContinue(scannedPaths);
+      } else {
+        onBack();
       }
     } catch {
-      setPhotoStatus('Unable to scan document');
-    } finally {
-      setIsCapturing(false);
+      onBack();
     }
-  };
+  }, [onBack, onContinue]);
 
-  return (
-    <View style={styles.scannerScreen}>
-      <View style={styles.scannerHeader}>
-        <Pressable
-          accessibilityLabel="Back to home"
-          accessibilityRole="button"
-          onPress={onBack}
-          style={({ pressed }) => [styles.backButton, pressed && styles.menuItemPressed]}
-        >
-          <Text style={styles.backButtonText}>Back</Text>
-        </Pressable>
-        <Text style={styles.scannerTitle}>Scanner</Text>
-      </View>
-      <View style={styles.cameraFrame}>
-        <Text style={styles.cameraMessage}>
-          Tap the capture button to scan. The document edges will be detected and aligned automatically.
-        </Text>
-      </View>
-      <View style={styles.captureControls}>
-        {photoPaths.length > 0 && (
-          <Pressable
-            accessibilityLabel="Continue to edit images"
-            accessibilityRole="button"
-            onPress={() => onContinue(photoPaths)}
-            style={({ pressed }) => [styles.continueButton, pressed && styles.actionButtonPressed]}
-          >
-            <Text style={styles.continueButtonText}>Continue</Text>
-          </Pressable>
-        )}
-        <Pressable
-          accessibilityLabel="Scan document"
-          accessibilityRole="button"
-          disabled={isCapturing}
-          onPress={scanPages}
-          style={({ pressed }) => [
-            styles.captureButton,
-            isCapturing && styles.captureButtonDisabled,
-            pressed && styles.actionButtonPressed,
-          ]}
-        >
-          <View style={styles.captureButtonInner} />
-        </Pressable>
-      </View>
-      {photoStatus && <Text style={styles.photoStatus}>{photoStatus}</Text>}
-    </View>
-  );
+  useEffect(() => {
+    if (autoStart && !hasAutoStarted.current) {
+      hasAutoStarted.current = true;
+      scanPages();
+    }
+  }, [autoStart, scanPages]);
+
+  return null;
 }
 
 function ScannerEditScreen({
@@ -354,6 +316,7 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeScreen, setActiveScreen] = useState<'home' | 'map' | 'gpa' | 'scanner' | 'scannerEdit'>('home');
   const [scannerPhotoPaths, setScannerPhotoPaths] = useState<string[]>([]);
+  const [scannerAutoStart, setScannerAutoStart] = useState(false);
   const [topMenuOpen, setTopMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<'main' | 'lms' | 'profile' | 'map'>('main');
@@ -544,6 +507,7 @@ function App() {
   const openScanner = () => {
     setActiveScreen('scanner');
     setScannerPhotoPaths([]);
+    setScannerAutoStart(true);
     closeMenu();
     setSettingsOpen(false);
     setTopMenuOpen(false);
@@ -1288,8 +1252,10 @@ function App() {
         </View>
       ) : activeScreen === 'scanner' ? (
         <ScannerScreen
+          autoStart={scannerAutoStart}
           onBack={goHome}
           onContinue={photoPaths => {
+            setScannerAutoStart(false);
             setScannerPhotoPaths(photoPaths);
             setActiveScreen('scannerEdit');
           }}
