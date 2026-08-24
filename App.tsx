@@ -5,6 +5,7 @@ import {
   Animated,
   Image,
   Modal,
+  NativeModules,
   Pressable,
   ScrollView,
   StatusBar,
@@ -169,12 +170,17 @@ const additionalLmsStorageKey = 'additionalLmsUrls';
 const selectedUniversityStorageKey = 'selectedUniversity';
 const universityMarkerModeStorageKey = 'universityMarkerMode';
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const { UniHubFileStore } = NativeModules as {
+  UniHubFileStore: {
+    saveToDownloads: (sourcePath: string, fileName: string) => Promise<string>;
+  };
+};
 
 function ScannerScreen({ onBack }: { onBack: () => void }) {
   const device = useCameraDevice('back');
   const photoOutput = usePhotoOutput();
   const { hasPermission, requestPermission } = useCameraPermission();
-  const [photoPath, setPhotoPath] = useState<string | null>(null);
+  const [photoStatus, setPhotoStatus] = useState<string | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
 
   useEffect(() => {
@@ -191,9 +197,14 @@ function ScannerScreen({ onBack }: { onBack: () => void }) {
     setIsCapturing(true);
     try {
       const photo = await photoOutput.capturePhotoToFile({}, {});
-      setPhotoPath(photo.filePath);
-    } catch {}
-    setIsCapturing(false);
+      const fileName = `UniHub_${Date.now()}.jpg`;
+      await UniHubFileStore.saveToDownloads(photo.filePath, fileName);
+      setPhotoStatus('Photo saved to Downloads');
+    } catch {
+      setPhotoStatus('Unable to save photo');
+    } finally {
+      setIsCapturing(false);
+    }
   };
 
   return (
@@ -233,7 +244,7 @@ function ScannerScreen({ onBack }: { onBack: () => void }) {
           <View style={styles.captureButtonInner} />
         </Pressable>
       </View>
-      {photoPath && <Text style={styles.photoStatus}>Photo captured</Text>}
+      {photoStatus && <Text style={styles.photoStatus}>{photoStatus}</Text>}
     </View>
   );
 }
