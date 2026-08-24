@@ -172,14 +172,15 @@ const universityMarkerModeStorageKey = 'universityMarkerMode';
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const { UniHubFileStore } = NativeModules as {
   UniHubFileStore: {
-    saveToDownloads: (sourcePath: string, fileName: string) => Promise<string>;
+    saveImagesAsPdf: (sourcePaths: string[], fileName: string) => Promise<string>;
   };
 };
 
-function ScannerScreen({ onBack }: { onBack: () => void }) {
+function ScannerScreen({ onBack, onContinue }: { onBack: () => void; onContinue: (photoPaths: string[]) => void }) {
   const device = useCameraDevice('back');
   const photoOutput = usePhotoOutput();
   const { hasPermission, requestPermission } = useCameraPermission();
+  const [photoPaths, setPhotoPaths] = useState<string[]>([]);
   const [photoStatus, setPhotoStatus] = useState<string | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
 
@@ -197,11 +198,10 @@ function ScannerScreen({ onBack }: { onBack: () => void }) {
     setIsCapturing(true);
     try {
       const photo = await photoOutput.capturePhotoToFile({}, {});
-      const fileName = `UniHub_${Date.now()}.jpg`;
-      await UniHubFileStore.saveToDownloads(photo.filePath, fileName);
-      setPhotoStatus('Photo saved to Downloads');
+      setPhotoPaths(current => [...current, photo.filePath]);
+      setPhotoStatus(null);
     } catch {
-      setPhotoStatus('Unable to save photo');
+      setPhotoStatus('Unable to capture photo');
     } finally {
       setIsCapturing(false);
     }
@@ -230,6 +230,16 @@ function ScannerScreen({ onBack }: { onBack: () => void }) {
         )}
       </View>
       <View style={styles.captureControls}>
+        {photoPaths.length > 0 && (
+          <Pressable
+            accessibilityLabel="Continue to edit images"
+            accessibilityRole="button"
+            onPress={() => onContinue(photoPaths)}
+            style={({ pressed }) => [styles.continueButton, pressed && styles.actionButtonPressed]}
+          >
+            <Text style={styles.continueButtonText}>Continue</Text>
+          </Pressable>
+        )}
         <Pressable
           accessibilityLabel="Take photo"
           accessibilityRole="button"
@@ -249,6 +259,98 @@ function ScannerScreen({ onBack }: { onBack: () => void }) {
   );
 }
 
+function ScannerEditScreen({
+  photoPaths,
+  onBack,
+  onComplete,
+}: {
+  photoPaths: string[];
+  onBack: () => void;
+  onComplete: () => void;
+}) {
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [isCreatingPdf, setIsCreatingPdf] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  const createPdf = async () => {
+    setIsCreatingPdf(true);
+    setStatus(null);
+    try {
+      const fileName = `UniHub_${Date.now()}.pdf`;
+      await UniHubFileStore.saveImagesAsPdf(photoPaths, fileName);
+      setStatus('PDF saved to Downloads');
+      onComplete();
+    } catch {
+      setStatus('Unable to create PDF');
+    } finally {
+      setIsCreatingPdf(false);
+    }
+  };
+
+  return (
+    <View style={styles.scannerScreen}>
+      <View style={styles.scannerHeader}>
+        <Pressable
+          accessibilityLabel="Back to scanner"
+          accessibilityRole="button"
+          onPress={onBack}
+          style={({ pressed }) => [styles.backButton, pressed && styles.menuItemPressed]}
+        >
+          <Text style={styles.backButtonText}>Back</Text>
+        </Pressable>
+        <Text style={styles.scannerTitle}>Edit Images</Text>
+      </View>
+      <View style={styles.editPreviewFrame}>
+        {photoPaths[selectedIndex] && (
+          <Image
+            accessibilityLabel={`Captured image ${selectedIndex + 1}`}
+            resizeMode="contain"
+            source={{ uri: `file://${photoPaths[selectedIndex]}` }}
+            style={styles.editPreview}
+          />
+        )}
+      </View>
+      <Text style={styles.imageCount}>{photoPaths.length} image{photoPaths.length === 1 ? '' : 's'}</Text>
+      <ScrollView
+        contentContainerStyle={styles.thumbnailList}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+      >
+        {photoPaths.map((photoPath, index) => (
+          <Pressable
+            accessibilityLabel={`Select image ${index + 1}`}
+            accessibilityRole="button"
+            key={photoPath}
+            onPress={() => setSelectedIndex(index)}
+            style={[styles.thumbnailButton, selectedIndex === index && styles.thumbnailButtonSelected]}
+          >
+            <Image
+              accessibilityLabel={`Thumbnail ${index + 1}`}
+              source={{ uri: `file://${photoPath}` }}
+              style={styles.thumbnail}
+            />
+            <Text style={styles.thumbnailNumber}>{index + 1}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+      <Pressable
+        accessibilityLabel="Convert images to PDF"
+        accessibilityRole="button"
+        disabled={isCreatingPdf}
+        onPress={createPdf}
+        style={({ pressed }) => [
+          styles.convertButton,
+          isCreatingPdf && styles.captureButtonDisabled,
+          pressed && styles.actionButtonPressed,
+        ]}
+      >
+        <Text style={styles.convertButtonText}>{isCreatingPdf ? 'Creating PDF...' : 'Convert to PDF'}</Text>
+      </Pressable>
+      {status && <Text style={styles.photoStatus}>{status}</Text>}
+    </View>
+  );
+}
+
 const getFaviconUrl = (url: string) =>
   `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(url)}&sz=64`;
 
@@ -263,7 +365,8 @@ const getNextSemesterName = (semesters: string[]) => {
 
 function App() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [activeScreen, setActiveScreen] = useState<'home' | 'map' | 'gpa' | 'scanner'>('home');
+  const [activeScreen, setActiveScreen] = useState<'home' | 'map' | 'gpa' | 'scanner' | 'scannerEdit'>('home');
+  const [scannerPhotoPaths, setScannerPhotoPaths] = useState<string[]>([]);
   const [topMenuOpen, setTopMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<'main' | 'lms' | 'profile' | 'map'>('main');
@@ -453,6 +556,7 @@ function App() {
 
   const openScanner = () => {
     setActiveScreen('scanner');
+    setScannerPhotoPaths([]);
     closeMenu();
     setSettingsOpen(false);
     setTopMenuOpen(false);
@@ -1196,7 +1300,19 @@ function App() {
           </ScrollView>
         </View>
       ) : activeScreen === 'scanner' ? (
-        <ScannerScreen onBack={goHome} />
+        <ScannerScreen
+          onBack={goHome}
+          onContinue={photoPaths => {
+            setScannerPhotoPaths(photoPaths);
+            setActiveScreen('scannerEdit');
+          }}
+        />
+      ) : activeScreen === 'scannerEdit' ? (
+        <ScannerEditScreen
+          onBack={() => setActiveScreen('scanner')}
+          onComplete={goHome}
+          photoPaths={scannerPhotoPaths}
+        />
       ) : activeScreen === 'map' ? (
         <View style={styles.mapScreen}>
           <WebView
@@ -1672,6 +1788,23 @@ const styles = StyleSheet.create({
     height: 76,
     position: 'relative',
   },
+  continueButton: {
+    alignItems: 'center',
+    backgroundColor: '#153b75',
+    borderRadius: 8,
+    bottom: 16,
+    justifyContent: 'center',
+    left: 0,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    position: 'absolute',
+    zIndex: 1,
+  },
+  continueButtonText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
   captureButton: {
     alignItems: 'center',
     backgroundColor: '#b9dedd',
@@ -1700,6 +1833,69 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 10,
     textAlign: 'center',
+  },
+  editPreviewFrame: {
+    backgroundColor: '#182b3d',
+    borderColor: '#b9dedd',
+    borderRadius: 14,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 220,
+    overflow: 'hidden',
+  },
+  editPreview: {
+    height: '100%',
+    width: '100%',
+  },
+  imageCount: {
+    color: '#153b75',
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 12,
+  },
+  thumbnailList: {
+    gap: 10,
+    paddingVertical: 12,
+  },
+  thumbnailButton: {
+    borderColor: '#d7e2e5',
+    borderRadius: 8,
+    borderWidth: 2,
+    height: 78,
+    overflow: 'hidden',
+    position: 'relative',
+    width: 64,
+  },
+  thumbnailButtonSelected: {
+    borderColor: '#16803c',
+  },
+  thumbnail: {
+    height: '100%',
+    width: '100%',
+  },
+  thumbnailNumber: {
+    backgroundColor: '#153b75',
+    bottom: 0,
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
+    left: 0,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    position: 'absolute',
+  },
+  convertButton: {
+    alignItems: 'center',
+    backgroundColor: '#16803c',
+    borderRadius: 8,
+    justifyContent: 'center',
+    paddingVertical: 14,
+  },
+  convertButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
   },
   gpaScreen: {
     backgroundColor: '#ffffff',
