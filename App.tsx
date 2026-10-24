@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ComponentRef } from 'react';
 import {
   Animated,
+  Alert,
   Image,
   Modal,
   NativeModules,
@@ -168,6 +169,8 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const { UniHubFileStore } = NativeModules as {
   UniHubFileStore: {
     saveImagesAsPdf: (sourcePaths: string[], fileName: string) => Promise<string>;
+    saveTextFile?: (fileName: string, contents: string) => Promise<string>;
+    readTextFile?: (fileName: string) => Promise<string | null>;
   };
 };
 
@@ -322,7 +325,6 @@ function App() {
   const [settingsSection, setSettingsSection] = useState<'main' | 'lms' | 'profile' | 'map'>('main');
   const [homePageUrl, setHomePageUrl] = useState(defaultHomePageUrl);
   const [customHomePageUrl, setCustomHomePageUrl] = useState<string | null>(null);
-  const [urlInput, setUrlInput] = useState('');
   const [additionalLmsUrls, setAdditionalLmsUrls] = useState<string[]>([]);
   const [additionalUrlInput, setAdditionalUrlInput] = useState('');
   const [urlToDelete, setUrlToDelete] = useState<string | null>(null);
@@ -364,15 +366,38 @@ function App() {
         if (savedUrl) {
           setCustomHomePageUrl(savedUrl);
           setHomePageUrl(savedUrl);
-          setUrlInput(savedUrl);
         }
 
-        const savedAdditionalUrls = await AsyncStorage.getItem(additionalLmsStorageKey);
-        if (savedAdditionalUrls) {
-          const parsedUrls: unknown = JSON.parse(savedAdditionalUrls);
-          if (Array.isArray(parsedUrls)) {
-            setAdditionalLmsUrls(parsedUrls.filter((url): url is string => typeof url === 'string'));
+        try {
+          let encryptedUrls: string | null = null;
+          if (typeof UniHubFileStore.readTextFile === 'function') {
+            encryptedUrls = await UniHubFileStore.readTextFile('Unihub.txt');
           }
+          const canReadEncryptedUrls = typeof UniHubFileStore.readTextFile === 'function';
+          const savedAdditionalUrls = encryptedUrls !== null
+            ? encryptedUrls
+            : await AsyncStorage.getItem(additionalLmsStorageKey);
+          if (savedAdditionalUrls !== null) {
+            const parsedUrls: unknown = JSON.parse(savedAdditionalUrls);
+            if (!Array.isArray(parsedUrls) || !parsedUrls.every((url): url is string => typeof url === 'string')) {
+              throw new Error('Saved LMS URLs are not a valid JSON array.');
+            }
+            setAdditionalLmsUrls(parsedUrls);
+            if (encryptedUrls === null) {
+              if (!canReadEncryptedUrls || typeof UniHubFileStore.saveTextFile !== 'function') {
+                throw new Error('Saved URLs were loaded, but the installed app needs to be rebuilt and reinstalled to migrate them to encrypted storage.');
+              }
+              await UniHubFileStore.saveTextFile('Unihub.txt', JSON.stringify(parsedUrls));
+            }
+            await AsyncStorage.removeItem(additionalLmsStorageKey);
+          } else if (!canReadEncryptedUrls) {
+            throw new Error('The installed app needs to be rebuilt and reinstalled to read encrypted LMS settings.');
+          }
+        } catch (error) {
+          Alert.alert(
+            'Could not load saved LMS settings',
+            error instanceof Error ? error.message : 'Saved LMS settings could not be read.',
+          );
         }
 
         const savedUniversity = await AsyncStorage.getItem(selectedUniversityStorageKey);
@@ -384,7 +409,12 @@ function App() {
         if (savedMarkerMode === 'all' || savedMarkerMode === 'selected') {
           setUniversityMarkerMode(savedMarkerMode);
         }
-      } catch {}
+      } catch (error) {
+        Alert.alert(
+          'Could not load saved settings',
+          error instanceof Error ? error.message : 'Saved settings could not be read.',
+        );
+      }
     };
 
     loadCustomHomePage();
@@ -566,21 +596,6 @@ function App() {
     } catch {}
   };
 
-  const submitUrl = async () => {
-    const nextUrl = urlInput.trim();
-
-    if (!nextUrl) {
-      return;
-    }
-
-    setHomePageUrl(nextUrl);
-    setCustomHomePageUrl(nextUrl);
-    setHomePageKey(current => current + 1);
-    try {
-      await AsyncStorage.setItem(customHomePageStorageKey, nextUrl);
-    } catch {}
-  };
-
   const useCustomHomePage = () => {
     if (!customHomePageUrl) {
       return;
@@ -603,6 +618,24 @@ function App() {
     setTopMenuOpen(false);
   };
 
+  const persistAdditionalLmsUrls = async (urls: string[]) => {
+    try {
+      if (
+        typeof UniHubFileStore.readTextFile !== 'function' ||
+        typeof UniHubFileStore.saveTextFile !== 'function'
+      ) {
+        throw new Error('The installed app needs to be rebuilt and reinstalled to save LMS URLs securely.');
+      }
+      await UniHubFileStore.saveTextFile('Unihub.txt', JSON.stringify(urls, null, 2));
+      await AsyncStorage.removeItem(additionalLmsStorageKey);
+    } catch (error) {
+      Alert.alert(
+        'Could not save encrypted LMS URLs',
+        error instanceof Error ? error.message : 'Unihub.txt could not be updated.',
+      );
+    }
+  };
+
   const submitAdditionalUrl = async () => {
     const nextUrl = additionalUrlInput.trim();
 
@@ -613,9 +646,7 @@ function App() {
     const nextUrls = [...additionalLmsUrls, nextUrl];
     setAdditionalLmsUrls(nextUrls);
     setAdditionalUrlInput('');
-    try {
-      await AsyncStorage.setItem(additionalLmsStorageKey, JSON.stringify(nextUrls));
-    } catch {}
+    await persistAdditionalLmsUrls(nextUrls);
   };
 
   const deleteAdditionalUrl = async () => {
@@ -626,9 +657,7 @@ function App() {
     const nextUrls = additionalLmsUrls.filter(url => url !== urlToDelete);
     setAdditionalLmsUrls(nextUrls);
     setUrlToDelete(null);
-    try {
-      await AsyncStorage.setItem(additionalLmsStorageKey, JSON.stringify(nextUrls));
-    } catch {}
+    await persistAdditionalLmsUrls(nextUrls);
   };
 
   const submitInstitution = () => {
@@ -741,17 +770,6 @@ function App() {
     setSubjectToDelete(null);
   };
 
-  const resetUrl = async () => {
-    setUrlInput('');
-    setHomePageUrl(defaultHomePageUrl);
-    setCustomHomePageUrl(null);
-    setHomePageKey(current => current + 1);
-    setTopMenuOpen(false);
-    try {
-      await AsyncStorage.removeItem(customHomePageStorageKey);
-    } catch {}
-  };
-
   const submitMapSearch = async () => {
     const query = mapSearchQuery.trim();
 
@@ -818,7 +836,7 @@ function App() {
             style={({ pressed }) => [styles.settingsOption, pressed && styles.menuItemPressed]}
           >
             <Text style={styles.settingsOptionTitle}>LMS</Text>
-            <Text style={styles.settingsOptionText}>Homepage and additional LMS</Text>
+            <Text style={styles.settingsOptionText}>Manage additional LMS</Text>
           </Pressable>
           <Pressable
             accessibilityLabel="Map settings"
@@ -975,33 +993,6 @@ function App() {
               <Text style={styles.backButtonText}>Back</Text>
             </Pressable>
             <Text style={styles.settingsTitle}>LMS</Text>
-          </View>
-          <Text style={styles.settingsLabel}>Home page URL</Text>
-          <TextInput
-            accessibilityLabel="Home page URL"
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="url"
-            onChangeText={setUrlInput}
-            placeholder="https://example.com"
-            style={styles.urlInput}
-            value={urlInput}
-          />
-          <View style={styles.settingsActions}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={submitUrl}
-              style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
-            >
-              <Text style={styles.actionButtonText}>Submit</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={resetUrl}
-              style={({ pressed }) => [styles.defaultButton, pressed && styles.actionButtonPressed]}
-            >
-              <Text style={styles.defaultButtonText}>Default</Text>
-            </Pressable>
           </View>
           <Text style={styles.settingsLabel}>Additional LMS</Text>
           <TextInput
