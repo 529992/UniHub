@@ -21,7 +21,7 @@ import scanDocument from 'react-native-document-scanner-plugin';
 import WebView, { type WebViewMessageEvent } from 'react-native-webview';
 
 const menuIcon = require('./assets/centerButton_icon.png');
-const defaultHomePageUrl = 'https://lms.lpec.lk/login/index.php';
+const defaultHomePageUrl = 'https://unihub.edu.lk';
 const universityOptions = [
   'University of Colombo',
   'University of Peradeniya',
