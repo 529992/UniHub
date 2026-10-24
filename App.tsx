@@ -53,6 +53,64 @@ type Subject = {
   grade: string;
   credit: string;
 };
+type SavedAppData = {
+  additionalLmsUrls: string[];
+  institutions: Record<string, string[]>;
+  subjects: Record<string, Subject[]>;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isStringArrayRecord = (value: unknown): value is Record<string, string[]> =>
+  isRecord(value) &&
+  Object.values(value).every(
+    item => Array.isArray(item) && item.every(entry => typeof entry === 'string'),
+  );
+
+const parseSavedAppData = (contents: string): SavedAppData => {
+  const parsed: unknown = JSON.parse(contents);
+  if (Array.isArray(parsed)) {
+    if (!parsed.every(url => typeof url === 'string')) {
+      throw new Error('Saved LMS URLs are not a valid JSON array.');
+    }
+    return { additionalLmsUrls: parsed, institutions: {}, subjects: {} };
+  }
+
+  if (!isRecord(parsed)) {
+    throw new Error('Saved app data is not a valid JSON object.');
+  }
+
+  const additionalLmsUrls = parsed.additionalLmsUrls ?? [];
+  const institutions = parsed.institutions ?? {};
+  const savedSubjects = parsed.subjects ?? {};
+  if (
+    !Array.isArray(additionalLmsUrls) ||
+    !additionalLmsUrls.every(url => typeof url === 'string') ||
+    !isStringArrayRecord(institutions) ||
+    !isRecord(savedSubjects) ||
+    !Object.values(savedSubjects).every(
+      semesterSubjects =>
+        Array.isArray(semesterSubjects) &&
+        semesterSubjects.every(
+          subject =>
+            isRecord(subject) &&
+            typeof subject.id === 'string' &&
+            typeof subject.name === 'string' &&
+            typeof subject.grade === 'string' &&
+            typeof subject.credit === 'string',
+        ),
+    )
+  ) {
+    throw new Error('Saved app data has an invalid format.');
+  }
+
+  return {
+    additionalLmsUrls,
+    institutions,
+    subjects: savedSubjects as Record<string, Subject[]>,
+  };
+};
 const gradePoints: Record<string, number> = {
   A: 4,
   'A-': 3.7,
@@ -357,6 +415,7 @@ function App() {
   const mapSearchRequestRef = useRef(0);
   const menuSlideRef = useRef<Animated.Value | null>(null);
   const buttonRotationRef = useRef<Animated.Value | null>(null);
+  const appDataSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     const loadCustomHomePage = async () => {
@@ -369,34 +428,34 @@ function App() {
         }
 
         try {
-          let encryptedUrls: string | null = null;
+          let encryptedAppData: string | null = null;
           if (typeof UniHubFileStore.readTextFile === 'function') {
-            encryptedUrls = await UniHubFileStore.readTextFile('Unihub.txt');
+            encryptedAppData = await UniHubFileStore.readTextFile('Unihub.txt');
           }
-          const canReadEncryptedUrls = typeof UniHubFileStore.readTextFile === 'function';
-          const savedAdditionalUrls = encryptedUrls !== null
-            ? encryptedUrls
+          const canReadEncryptedAppData = typeof UniHubFileStore.readTextFile === 'function';
+          const savedAppData = encryptedAppData !== null
+            ? encryptedAppData
             : await AsyncStorage.getItem(additionalLmsStorageKey);
-          if (savedAdditionalUrls !== null) {
-            const parsedUrls: unknown = JSON.parse(savedAdditionalUrls);
-            if (!Array.isArray(parsedUrls) || !parsedUrls.every((url): url is string => typeof url === 'string')) {
-              throw new Error('Saved LMS URLs are not a valid JSON array.');
-            }
-            setAdditionalLmsUrls(parsedUrls);
-            if (encryptedUrls === null) {
-              if (!canReadEncryptedUrls || typeof UniHubFileStore.saveTextFile !== 'function') {
-                throw new Error('Saved URLs were loaded, but the installed app needs to be rebuilt and reinstalled to migrate them to encrypted storage.');
+          if (savedAppData !== null) {
+            const parsedAppData = parseSavedAppData(savedAppData);
+            setAdditionalLmsUrls(parsedAppData.additionalLmsUrls);
+            setInstitutions(parsedAppData.institutions);
+            setSubjects(parsedAppData.subjects);
+            const storedLegacyArray = Array.isArray(JSON.parse(savedAppData));
+            if (encryptedAppData === null || storedLegacyArray) {
+              if (!canReadEncryptedAppData || typeof UniHubFileStore.saveTextFile !== 'function') {
+                throw new Error('Saved app data was loaded, but the installed app needs to be rebuilt and reinstalled to migrate it to encrypted storage.');
               }
-              await UniHubFileStore.saveTextFile('Unihub.txt', JSON.stringify(parsedUrls));
+              await UniHubFileStore.saveTextFile('Unihub.txt', JSON.stringify(parsedAppData, null, 2));
             }
             await AsyncStorage.removeItem(additionalLmsStorageKey);
-          } else if (!canReadEncryptedUrls) {
+          } else if (!canReadEncryptedAppData) {
             throw new Error('The installed app needs to be rebuilt and reinstalled to read encrypted LMS settings.');
           }
         } catch (error) {
           Alert.alert(
-            'Could not load saved LMS settings',
-            error instanceof Error ? error.message : 'Saved LMS settings could not be read.',
+            'Could not load saved app data',
+            error instanceof Error ? error.message : 'Saved app data could not be read.',
           );
         }
 
@@ -618,22 +677,24 @@ function App() {
     setTopMenuOpen(false);
   };
 
-  const persistAdditionalLmsUrls = async (urls: string[]) => {
-    try {
+  const persistAppData = (appData: SavedAppData) => {
+    const save = appDataSaveQueueRef.current.then(async () => {
       if (
         typeof UniHubFileStore.readTextFile !== 'function' ||
         typeof UniHubFileStore.saveTextFile !== 'function'
       ) {
-        throw new Error('The installed app needs to be rebuilt and reinstalled to save LMS URLs securely.');
+        throw new Error('The installed app needs to be rebuilt and reinstalled to save app data securely.');
       }
-      await UniHubFileStore.saveTextFile('Unihub.txt', JSON.stringify(urls, null, 2));
+      await UniHubFileStore.saveTextFile('Unihub.txt', JSON.stringify(appData, null, 2));
       await AsyncStorage.removeItem(additionalLmsStorageKey);
-    } catch (error) {
+    });
+    appDataSaveQueueRef.current = save.catch(error => {
       Alert.alert(
-        'Could not save encrypted LMS URLs',
+        'Could not save encrypted app data',
         error instanceof Error ? error.message : 'Unihub.txt could not be updated.',
       );
-    }
+    });
+    return appDataSaveQueueRef.current;
   };
 
   const submitAdditionalUrl = async () => {
@@ -646,7 +707,7 @@ function App() {
     const nextUrls = [...additionalLmsUrls, nextUrl];
     setAdditionalLmsUrls(nextUrls);
     setAdditionalUrlInput('');
-    await persistAdditionalLmsUrls(nextUrls);
+    await persistAppData({ additionalLmsUrls: nextUrls, institutions, subjects });
   };
 
   const deleteAdditionalUrl = async () => {
@@ -657,50 +718,51 @@ function App() {
     const nextUrls = additionalLmsUrls.filter(url => url !== urlToDelete);
     setAdditionalLmsUrls(nextUrls);
     setUrlToDelete(null);
-    await persistAdditionalLmsUrls(nextUrls);
+    await persistAppData({ additionalLmsUrls: nextUrls, institutions, subjects });
   };
 
-  const submitInstitution = () => {
+  const submitInstitution = async () => {
     const institutionName = institutionNameInput.trim();
 
     if (!institutionName || institutions[institutionName]) {
       return;
     }
 
-    setInstitutions(current => ({ ...current, [institutionName]: [] }));
+    const nextInstitutions = { ...institutions, [institutionName]: [] };
+    setInstitutions(nextInstitutions);
     setInstitutionNameInput('');
     setAddInstitutionOpen(false);
+    await persistAppData({ additionalLmsUrls, institutions: nextInstitutions, subjects });
   };
 
-  const submitSemester = () => {
+  const submitSemester = async () => {
     const semesterName = semesterNameInput.trim();
 
     if (!selectedInstitution || !semesterName) {
       return;
     }
 
-    setInstitutions(current => ({
-      ...current,
-      [selectedInstitution]: [...(current[selectedInstitution] || []), semesterName],
-    }));
-    setSemesterNameInput(getNextSemesterName([...(institutions[selectedInstitution] || []), semesterName]));
+    const nextSemesters = [...(institutions[selectedInstitution] || []), semesterName];
+    const nextInstitutions = { ...institutions, [selectedInstitution]: nextSemesters };
+    setInstitutions(nextInstitutions);
+    setSemesterNameInput(getNextSemesterName(nextSemesters));
+    await persistAppData({ additionalLmsUrls, institutions: nextInstitutions, subjects });
   };
 
-  const deleteInstitution = () => {
+  const deleteInstitution = async () => {
     if (!institutionToDelete) {
       return;
     }
 
-    setInstitutions(current => {
-      const nextInstitutions = { ...current };
-      delete nextInstitutions[institutionToDelete];
-      return nextInstitutions;
-    });
+    const nextInstitutions = { ...institutions };
+    delete nextInstitutions[institutionToDelete];
+    setInstitutions(nextInstitutions);
     setInstitutionToDelete(null);
     setSelectedInstitution(null);
+    await persistAppData({ additionalLmsUrls, institutions: nextInstitutions, subjects });
   };
 
-  const deleteSemester = () => {
+  const deleteSemester = async () => {
     if (!selectedInstitution || !semesterToDelete) {
       return;
     }
@@ -708,12 +770,11 @@ function App() {
     const remainingSemesters = (institutions[selectedInstitution] || []).filter(
       semesterName => semesterName !== semesterToDelete,
     );
-    setInstitutions(current => ({
-      ...current,
-      [selectedInstitution]: remainingSemesters,
-    }));
+    const nextInstitutions = { ...institutions, [selectedInstitution]: remainingSemesters };
+    setInstitutions(nextInstitutions);
     setSemesterNameInput(getNextSemesterName(remainingSemesters));
     setSemesterToDelete(null);
+    await persistAppData({ additionalLmsUrls, institutions: nextInstitutions, subjects });
   };
 
   const getSemesterKey = (semesterName: string) => `${selectedInstitution}::${semesterName}`;
@@ -736,7 +797,7 @@ function App() {
     setSubjectFormOpen(true);
   };
 
-  const submitSubject = () => {
+  const submitSubject = async () => {
     if (!selectedSemester || !subjectNameInput.trim() || !subjectCreditInput.trim()) {
       return;
     }
@@ -748,26 +809,30 @@ function App() {
       grade: subjectGradeInput,
       credit: subjectCreditInput.trim(),
     };
-    setSubjects(current => ({
-      ...current,
+    const nextSubjects = {
+      ...subjects,
       [semesterKey]: editingSubjectId
-        ? (current[semesterKey] || []).map(item => item.id === editingSubjectId ? subject : item)
-        : [...(current[semesterKey] || []), subject],
-    }));
+        ? (subjects[semesterKey] || []).map(item => item.id === editingSubjectId ? subject : item)
+        : [...(subjects[semesterKey] || []), subject],
+    };
+    setSubjects(nextSubjects);
     setSubjectFormOpen(false);
+    await persistAppData({ additionalLmsUrls, institutions, subjects: nextSubjects });
   };
 
-  const deleteSubject = () => {
+  const deleteSubject = async () => {
     if (!selectedSemester || !subjectToDelete) {
       return;
     }
 
     const semesterKey = getSemesterKey(selectedSemester);
-    setSubjects(current => ({
-      ...current,
-      [semesterKey]: (current[semesterKey] || []).filter(subject => subject.id !== subjectToDelete.id),
-    }));
+    const nextSubjects = {
+      ...subjects,
+      [semesterKey]: (subjects[semesterKey] || []).filter(subject => subject.id !== subjectToDelete.id),
+    };
+    setSubjects(nextSubjects);
     setSubjectToDelete(null);
+    await persistAppData({ additionalLmsUrls, institutions, subjects: nextSubjects });
   };
 
   const submitMapSearch = async () => {
