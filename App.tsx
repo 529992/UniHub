@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import scanDocument from 'react-native-document-scanner-plugin';
-import WebView from 'react-native-webview';
+import WebView, { type WebViewMessageEvent } from 'react-native-webview';
 
 const menuIcon = require('./assets/centerButton_icon.png');
 const defaultHomePageUrl = 'https://lms.lpec.lk/login/index.php';
@@ -58,6 +58,26 @@ type SavedAppData = {
   institutions: Record<string, string[]>;
   subjects: Record<string, Subject[]>;
 };
+type SavedMapData = {
+  selectedUniversity: string;
+  universityMarkerMode: 'all' | 'selected';
+  showUniversityMarkers: boolean;
+  pins: MapPin[];
+};
+type MapPinRating = 'correct' | 'wrong' | 'duplicate';
+type MapPinReport = {
+  id: string;
+  rating: MapPinRating;
+  duplicatePinIds: string[];
+  createdAt: string;
+};
+type MapPin = {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  reports: MapPinReport[];
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -67,6 +87,55 @@ const isStringArrayRecord = (value: unknown): value is Record<string, string[]> 
   Object.values(value).every(
     item => Array.isArray(item) && item.every(entry => typeof entry === 'string'),
   );
+
+const parseSavedMapData = (contents: string): SavedMapData => {
+  const parsed: unknown = JSON.parse(contents);
+  if (
+    !isRecord(parsed) ||
+    typeof parsed.selectedUniversity !== 'string' ||
+    (parsed.selectedUniversity !== '' && !universityOptions.includes(parsed.selectedUniversity)) ||
+    (parsed.universityMarkerMode !== 'all' && parsed.universityMarkerMode !== 'selected') ||
+    typeof parsed.showUniversityMarkers !== 'boolean' ||
+    (parsed.pins !== undefined &&
+      (!Array.isArray(parsed.pins) ||
+        !parsed.pins.every(
+          pin =>
+            isRecord(pin) &&
+            typeof pin.id === 'string' &&
+            typeof pin.name === 'string' &&
+            pin.name.trim().length > 0 &&
+            typeof pin.latitude === 'number' &&
+            Number.isFinite(pin.latitude) &&
+            pin.latitude >= -90 &&
+            pin.latitude <= 90 &&
+            typeof pin.longitude === 'number' &&
+            Number.isFinite(pin.longitude) &&
+            pin.longitude >= -180 &&
+            pin.longitude <= 180 &&
+            Array.isArray(pin.reports) &&
+            pin.reports.every(
+              report =>
+                isRecord(report) &&
+                typeof report.id === 'string' &&
+                (report.rating === 'correct' ||
+                  report.rating === 'wrong' ||
+                  report.rating === 'duplicate') &&
+                Array.isArray(report.duplicatePinIds) &&
+                report.duplicatePinIds.every(id => typeof id === 'string') &&
+                typeof report.createdAt === 'string',
+            ),
+        )))
+  ) {
+    throw new Error('Saved map data has an invalid format.');
+  }
+
+  return {
+    selectedUniversity: parsed.selectedUniversity,
+    universityMarkerMode: parsed.universityMarkerMode,
+    showUniversityMarkers: parsed.showUniversityMarkers,
+    pins: (parsed.pins as MapPin[] | undefined) ?? [],
+  };
+};
 
 const parseSavedAppData = (contents: string): SavedAppData => {
   const parsed: unknown = JSON.parse(contents);
@@ -189,6 +258,7 @@ const openFreeMapHtml = `
         { name: 'University of Vavuniya', city: 'Vavuniya', coordinates: [80.4980, 8.7530] }
       ];
       const universityMarkers = [];
+      const userPinMarkers = [];
       governmentUniversities.forEach(university => {
         const marker = new maplibregl.Marker({ color: '#16803c' })
           .setLngLat(university.coordinates)
@@ -196,9 +266,60 @@ const openFreeMapHtml = `
             '<strong>' + university.name + '</strong><br>' + university.city
           ))
           .addTo(map);
+        marker.getElement().style.setProperty('z-index', '1000', 'important');
         universityMarkers.push({ marker, name: university.name });
       });
       let searchMarker;
+      let longPressTimer = null;
+      let longPressPointer = null;
+      let lastTouchPinRequestAt = 0;
+      const clearLongPress = () => {
+        if (longPressTimer !== null) {
+          window.clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+        longPressPointer = null;
+      };
+      const requestPinAt = lngLat => {
+        lastTouchPinRequestAt = Date.now();
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'add-user-pin',
+          latitude: lngLat.lat,
+          longitude: lngLat.lng
+        }));
+      };
+      const mapCanvasContainer = map.getCanvasContainer();
+      mapCanvasContainer.addEventListener('pointerdown', event => {
+        if (event.pointerType !== 'touch') return;
+        clearLongPress();
+        longPressPointer = {
+          id: event.pointerId,
+          x: event.clientX,
+          y: event.clientY
+        };
+        longPressTimer = window.setTimeout(() => {
+          if (!longPressPointer) return;
+          const bounds = mapCanvasContainer.getBoundingClientRect();
+          requestPinAt(map.unproject([
+            longPressPointer.x - bounds.left,
+            longPressPointer.y - bounds.top
+          ]));
+          clearLongPress();
+        }, 600);
+      });
+      mapCanvasContainer.addEventListener('pointermove', event => {
+        if (!longPressPointer || event.pointerId !== longPressPointer.id) return;
+        const movedX = event.clientX - longPressPointer.x;
+        const movedY = event.clientY - longPressPointer.y;
+        if (Math.hypot(movedX, movedY) > 12) clearLongPress();
+      });
+      mapCanvasContainer.addEventListener('pointerup', clearLongPress);
+      mapCanvasContainer.addEventListener('pointercancel', clearLongPress);
+      map.on('contextmenu', event => {
+        event.preventDefault();
+        if (Date.now() - lastTouchPinRequestAt < 1000) return;
+        requestPinAt(event.lngLat);
+      });
       window.addEventListener('message', event => {
         const place = JSON.parse(event.data);
         if (place.type === 'set-universities') {
@@ -210,11 +331,72 @@ const openFreeMapHtml = `
           });
           return;
         }
+        if (place.type === 'set-user-pins') {
+          userPinMarkers.forEach(marker => marker.remove());
+          userPinMarkers.length = 0;
+          place.pins.forEach(pin => {
+            const marker = new maplibregl.Marker({ color: '#b42318' })
+              .setLngLat([pin.longitude, pin.latitude])
+              .setPopup(new maplibregl.Popup({ offset: 25 }).setText(pin.name))
+              .addTo(map);
+            marker.getElement().style.setProperty('z-index', '10', 'important');
+            const openPinRating = () => {
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'select-user-pin',
+                pinId: pin.id
+              }));
+            };
+            const markerElement = marker.getElement();
+            let markerLongPressTimer = null;
+            let markerLongPressFired = false;
+            let markerPointerStart = null;
+            const clearMarkerLongPress = () => {
+              if (markerLongPressTimer !== null) {
+                window.clearTimeout(markerLongPressTimer);
+                markerLongPressTimer = null;
+              }
+              markerPointerStart = null;
+            };
+            markerElement.addEventListener('pointerdown', event => {
+              if (event.pointerType !== 'touch') return;
+              event.stopPropagation();
+              clearMarkerLongPress();
+              markerLongPressFired = false;
+              markerPointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY };
+              markerLongPressTimer = window.setTimeout(() => {
+                markerLongPressFired = true;
+                openPinRating();
+                clearMarkerLongPress();
+              }, 500);
+            });
+            markerElement.addEventListener('pointermove', event => {
+              if (!markerPointerStart || event.pointerId !== markerPointerStart.id) return;
+              if (
+                Math.hypot(
+                  event.clientX - markerPointerStart.x,
+                  event.clientY - markerPointerStart.y
+                ) > 12
+              ) clearMarkerLongPress();
+            });
+            markerElement.addEventListener('pointerup', clearMarkerLongPress);
+            markerElement.addEventListener('pointercancel', clearMarkerLongPress);
+            markerElement.addEventListener('click', event => {
+              if (markerLongPressFired) {
+                event.preventDefault();
+                event.stopPropagation();
+                markerLongPressFired = false;
+              }
+            });
+            userPinMarkers.push(marker);
+          });
+          return;
+        }
         map.flyTo({ center: [place.longitude, place.latitude], zoom: 15 });
         if (searchMarker) searchMarker.remove();
         searchMarker = new maplibregl.Marker({ color: '#b42318' })
           .setLngLat([place.longitude, place.latitude])
           .addTo(map);
+        searchMarker.getElement().style.setProperty('z-index', '10', 'important');
       });
     </script>
   </body>
@@ -392,6 +574,13 @@ function App() {
   const [showUniversityMarkers, setShowUniversityMarkers] = useState(true);
   const [universityMarkerMode, setUniversityMarkerMode] = useState<'all' | 'selected'>('all');
   const [selectedUniversity, setSelectedUniversity] = useState('');
+  const [mapPins, setMapPins] = useState<MapPin[]>([]);
+  const [mapPinDialog, setMapPinDialog] = useState<'add' | 'rate' | null>(null);
+  const [mapPinDraftCoordinates, setMapPinDraftCoordinates] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [mapPinNameInput, setMapPinNameInput] = useState('');
+  const [selectedMapPinId, setSelectedMapPinId] = useState<string | null>(null);
+  const [mapPinRating, setMapPinRating] = useState<MapPinRating | null>(null);
+  const [duplicateMapPinIds, setDuplicateMapPinIds] = useState<string[]>([]);
   const [universityPickerOpen, setUniversityPickerOpen] = useState(false);
   const [institutions, setInstitutions] = useState<Record<string, string[]>>({});
   const [institutionNameInput, setInstitutionNameInput] = useState('');
@@ -416,6 +605,7 @@ function App() {
   const menuSlideRef = useRef<Animated.Value | null>(null);
   const buttonRotationRef = useRef<Animated.Value | null>(null);
   const appDataSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const mapDataSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     const loadCustomHomePage = async () => {
@@ -459,14 +649,48 @@ function App() {
           );
         }
 
-        const savedUniversity = await AsyncStorage.getItem(selectedUniversityStorageKey);
-        if (savedUniversity && universityOptions.includes(savedUniversity)) {
-          setSelectedUniversity(savedUniversity);
-        }
-
-        const savedMarkerMode = await AsyncStorage.getItem(universityMarkerModeStorageKey);
-        if (savedMarkerMode === 'all' || savedMarkerMode === 'selected') {
-          setUniversityMarkerMode(savedMarkerMode);
+        try {
+          if (
+            typeof UniHubFileStore.readTextFile !== 'function' ||
+            typeof UniHubFileStore.saveTextFile !== 'function'
+          ) {
+            throw new Error('The installed app needs to be rebuilt and reinstalled to read encrypted map data.');
+          }
+          const encryptedMapData = await UniHubFileStore.readTextFile('unimap.txt');
+          if (encryptedMapData !== null) {
+            const savedMapData = parseSavedMapData(encryptedMapData);
+            setSelectedUniversity(savedMapData.selectedUniversity);
+            setUniversityMarkerMode(savedMapData.universityMarkerMode);
+            setShowUniversityMarkers(savedMapData.showUniversityMarkers);
+            setMapPins(savedMapData.pins);
+          } else {
+            const [legacyUniversity, legacyMarkerMode] = await Promise.all([
+              AsyncStorage.getItem(selectedUniversityStorageKey),
+              AsyncStorage.getItem(universityMarkerModeStorageKey),
+            ]);
+            const migratedMapData: SavedMapData = {
+              selectedUniversity:
+                legacyUniversity && universityOptions.includes(legacyUniversity)
+                  ? legacyUniversity
+                  : '',
+              universityMarkerMode:
+                legacyMarkerMode === 'selected' ? 'selected' : 'all',
+              showUniversityMarkers: true,
+              pins: [],
+            };
+            setSelectedUniversity(migratedMapData.selectedUniversity);
+            setUniversityMarkerMode(migratedMapData.universityMarkerMode);
+            await UniHubFileStore.saveTextFile('unimap.txt', JSON.stringify(migratedMapData, null, 2));
+          }
+          await Promise.all([
+            AsyncStorage.removeItem(selectedUniversityStorageKey),
+            AsyncStorage.removeItem(universityMarkerModeStorageKey),
+          ]);
+        } catch (error) {
+          Alert.alert(
+            'Could not load saved map data',
+            error instanceof Error ? error.message : 'Saved map data could not be read.',
+          );
         }
       } catch (error) {
         Alert.alert(
@@ -613,6 +837,22 @@ function App() {
   const openProfileSettings = () => setSettingsSection('profile');
   const openMapSettings = () => setSettingsSection('map');
 
+  const persistMapData = (mapData: SavedMapData) => {
+    const save = mapDataSaveQueueRef.current.then(async () => {
+      if (typeof UniHubFileStore.saveTextFile !== 'function') {
+        throw new Error('The installed app needs to be rebuilt and reinstalled to save map data securely.');
+      }
+      await UniHubFileStore.saveTextFile('unimap.txt', JSON.stringify(mapData, null, 2));
+    });
+    mapDataSaveQueueRef.current = save.catch(error => {
+      Alert.alert(
+        'Could not save encrypted map data',
+        error instanceof Error ? error.message : 'unimap.txt could not be updated.',
+      );
+    });
+    return mapDataSaveQueueRef.current;
+  };
+
   const applyUniversityMarkerSetting = useCallback(() => {
     mapWebViewRef.current?.injectJavaScript(`window.postMessage(${JSON.stringify(JSON.stringify({
       type: 'set-universities',
@@ -620,17 +860,30 @@ function App() {
       mode: universityMarkerMode,
       selectedUniversity,
     }))}, '*'); true;`);
-  }, [selectedUniversity, showUniversityMarkers, universityMarkerMode]);
+    mapWebViewRef.current?.injectJavaScript(`window.postMessage(${JSON.stringify(JSON.stringify({
+      type: 'set-user-pins',
+      pins: mapPins,
+    }))}, '*'); true;`);
+  }, [mapPins, selectedUniversity, showUniversityMarkers, universityMarkerMode]);
 
-  const toggleUniversityMarkers = (visible: boolean) => {
+  const toggleUniversityMarkers = async (visible: boolean) => {
     setShowUniversityMarkers(visible);
+    await persistMapData({
+      selectedUniversity,
+      universityMarkerMode,
+      showUniversityMarkers: visible,
+      pins: mapPins,
+    });
   };
 
   const changeUniversityMarkerMode = async (mode: 'all' | 'selected') => {
     setUniversityMarkerMode(mode);
-    try {
-      await AsyncStorage.setItem(universityMarkerModeStorageKey, mode);
-    } catch {}
+    await persistMapData({
+      selectedUniversity,
+      universityMarkerMode: mode,
+      showUniversityMarkers,
+      pins: mapPins,
+    });
   };
 
   useEffect(() => {
@@ -642,17 +895,23 @@ function App() {
       return;
     }
 
-    try {
-      await AsyncStorage.setItem(selectedUniversityStorageKey, selectedUniversity);
-    } catch {}
+    await persistMapData({
+      selectedUniversity,
+      universityMarkerMode,
+      showUniversityMarkers,
+      pins: mapPins,
+    });
   };
 
   const deleteUniversity = async () => {
     setSelectedUniversity('');
     setUniversityPickerOpen(false);
-    try {
-      await AsyncStorage.removeItem(selectedUniversityStorageKey);
-    } catch {}
+    await persistMapData({
+      selectedUniversity: '',
+      universityMarkerMode,
+      showUniversityMarkers,
+      pins: mapPins,
+    });
   };
 
   const useCustomHomePage = () => {
@@ -871,6 +1130,112 @@ function App() {
     }))}, '*'); true;`);
   };
 
+  const handleMapMessage = (event: WebViewMessageEvent) => {
+    let message: unknown;
+    try {
+      message = JSON.parse(event.nativeEvent.data);
+    } catch {
+      Alert.alert('Map error', 'The map sent an invalid location event.');
+      return;
+    }
+    if (!isRecord(message)) {
+      return;
+    }
+
+    if (
+      message.type === 'add-user-pin' &&
+      typeof message.latitude === 'number' &&
+      Number.isFinite(message.latitude) &&
+      message.latitude >= -90 &&
+      message.latitude <= 90 &&
+      typeof message.longitude === 'number' &&
+      Number.isFinite(message.longitude) &&
+      message.longitude >= -180 &&
+      message.longitude <= 180
+    ) {
+      setMapPinDraftCoordinates({
+        latitude: message.latitude,
+        longitude: message.longitude,
+      });
+      setMapPinNameInput('');
+      setMapPinDialog('add');
+      return;
+    }
+
+    if (message.type === 'select-user-pin' && typeof message.pinId === 'string') {
+      if (mapPins.some(pin => pin.id === message.pinId)) {
+        setSelectedMapPinId(message.pinId);
+        setMapPinRating(null);
+        setDuplicateMapPinIds([]);
+        setMapPinDialog('rate');
+      }
+    }
+  };
+
+  const submitNewMapPin = async () => {
+    const name = mapPinNameInput.trim();
+    if (!name || !mapPinDraftCoordinates) {
+      return;
+    }
+
+    const newPin: MapPin = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      name,
+      ...mapPinDraftCoordinates,
+      reports: [],
+    };
+    const nextPins = [...mapPins, newPin];
+    setMapPins(nextPins);
+    setMapPinDialog(null);
+    setMapPinDraftCoordinates(null);
+    setMapPinNameInput('');
+    await persistMapData({
+      selectedUniversity,
+      universityMarkerMode,
+      showUniversityMarkers,
+      pins: nextPins,
+    });
+  };
+
+  const submitMapPinReport = async () => {
+    if (!selectedMapPinId || !mapPinRating) {
+      return;
+    }
+    if (mapPinRating === 'duplicate' && duplicateMapPinIds.length === 0) {
+      return;
+    }
+
+    const report: MapPinReport = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      rating: mapPinRating,
+      duplicatePinIds: mapPinRating === 'duplicate' ? duplicateMapPinIds : [],
+      createdAt: new Date().toISOString(),
+    };
+    const nextPins = mapPins.map(pin =>
+      pin.id === selectedMapPinId ? { ...pin, reports: [...pin.reports, report] } : pin,
+    );
+    setMapPins(nextPins);
+    setMapPinDialog(null);
+    setSelectedMapPinId(null);
+    setMapPinRating(null);
+    setDuplicateMapPinIds([]);
+    await persistMapData({
+      selectedUniversity,
+      universityMarkerMode,
+      showUniversityMarkers,
+      pins: nextPins,
+    });
+  };
+
+  const toggleDuplicateMapPin = (pinId: string) => {
+    setDuplicateMapPinIds(current =>
+      current.includes(pinId)
+        ? current.filter(selectedId => selectedId !== pinId)
+        : [...current, pinId],
+    );
+  };
+
+  const selectedMapPin = mapPins.find(pin => pin.id === selectedMapPinId);
   const buttonRotationStyle = {
     rotate: buttonRotation.interpolate({
       inputRange: [0, 1],
@@ -1330,6 +1695,7 @@ function App() {
             source={{ html: openFreeMapHtml }}
             style={styles.webView}
             onLoadEnd={applyUniversityMarkerSetting}
+            onMessage={handleMapMessage}
             javaScriptEnabled
             domStorageEnabled
             showsVerticalScrollIndicator={false}
@@ -1374,6 +1740,11 @@ function App() {
                   <Text numberOfLines={2} style={styles.mapSearchResultText}>{place.display_name}</Text>
                 </Pressable>
               ))}
+            </View>
+          )}
+          {!mapSearchLoading && mapSearchResults.length === 0 && (
+            <View pointerEvents="none" style={styles.mapHint}>
+              <Text style={styles.mapHintText}>Long-press map to add a pin. Long-press a pin to rate it.</Text>
             </View>
           )}
         </View>
@@ -1519,6 +1890,151 @@ function App() {
       >
         <Image source={menuIcon} style={styles.centerButtonIcon} resizeMode="contain" tintColor="#153b75" />
       </AnimatedPressable>
+      <Modal
+        animationType="fade"
+        transparent
+        visible={mapPinDialog === 'add'}
+        onRequestClose={() => setMapPinDialog(null)}
+      >
+        <View style={styles.confirmationBackdrop}>
+          <View style={styles.confirmationCard}>
+            <Text style={styles.confirmationTitle}>Name this location</Text>
+            {mapPinDraftCoordinates && (
+              <Text style={styles.confirmationText}>
+                {mapPinDraftCoordinates.latitude.toFixed(5)}, {mapPinDraftCoordinates.longitude.toFixed(5)}
+              </Text>
+            )}
+            <TextInput
+              accessibilityLabel="Location name"
+              autoFocus
+              onChangeText={setMapPinNameInput}
+              onSubmitEditing={submitNewMapPin}
+              placeholder="Location name"
+              placeholderTextColor="#6d7b8b"
+              returnKeyType="done"
+              style={styles.urlInput}
+              value={mapPinNameInput}
+            />
+            <View style={styles.confirmationActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setMapPinDialog(null)}
+                style={({ pressed }) => [styles.cancelButton, pressed && styles.actionButtonPressed]}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                accessibilityLabel="Save location pin"
+                accessibilityRole="button"
+                disabled={!mapPinNameInput.trim()}
+                onPress={submitNewMapPin}
+                style={({ pressed }) => [
+                  styles.confirmButton,
+                  styles.addClassConfirmButton,
+                  !mapPinNameInput.trim() && styles.mapPinDisabledButton,
+                  pressed && styles.actionButtonPressed,
+                ]}
+              >
+                <Text style={styles.confirmButtonText}>Save pin</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        animationType="fade"
+        transparent
+        visible={mapPinDialog === 'rate'}
+        onRequestClose={() => setMapPinDialog(null)}
+      >
+        <View style={styles.confirmationBackdrop}>
+          <View style={[styles.confirmationCard, styles.mapPinRatingCard]}>
+            <Text style={styles.confirmationTitle}>{selectedMapPin?.name || 'Rate this location'}</Text>
+            <Text style={styles.confirmationText}>Is this location shown correctly?</Text>
+            <View style={styles.mapPinRatingOptions}>
+              {([
+                ['correct', 'Correct'],
+                ['wrong', 'Wrong'],
+                ['duplicate', 'Duplicate'],
+              ] as const).map(([rating, label]) => (
+                <Pressable
+                  accessibilityLabel={label}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: mapPinRating === rating }}
+                  key={rating}
+                  onPress={() => {
+                    setMapPinRating(rating);
+                    if (rating !== 'duplicate') {
+                      setDuplicateMapPinIds([]);
+                    }
+                  }}
+                  style={[
+                    styles.mapPinRatingOption,
+                    mapPinRating === rating && styles.mapPinRatingOptionSelected,
+                  ]}
+                >
+                  <Text style={[
+                    styles.mapPinRatingOptionText,
+                    mapPinRating === rating && styles.mapPinRatingOptionTextSelected,
+                  ]}>{label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            {mapPinRating === 'duplicate' && (
+              <>
+                <Text style={styles.mapPinDuplicateLabel}>Select the duplicate locations:</Text>
+                <ScrollView style={styles.mapPinDuplicateList} nestedScrollEnabled>
+                  {mapPins.filter(pin => pin.id !== selectedMapPinId).map(pin => {
+                    const selected = duplicateMapPinIds.includes(pin.id);
+                    return (
+                      <Pressable
+                        accessibilityLabel={`Duplicate of ${pin.name}`}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: selected }}
+                        key={pin.id}
+                        onPress={() => toggleDuplicateMapPin(pin.id)}
+                        style={styles.mapPinDuplicateOption}
+                      >
+                        <View style={[styles.mapPinCheckbox, selected && styles.mapPinCheckboxSelected]}>
+                          {selected && <Text style={styles.mapPinCheckboxTick}>✓</Text>}
+                        </View>
+                        <Text numberOfLines={1} style={styles.mapPinDuplicateName}>{pin.name}</Text>
+                      </Pressable>
+                    );
+                  })}
+                  {mapPins.length <= 1 && (
+                    <Text style={styles.mapPinNoDuplicates}>No other saved pins to select.</Text>
+                  )}
+                </ScrollView>
+              </>
+            )}
+            <View style={styles.confirmationActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setMapPinDialog(null)}
+                style={({ pressed }) => [styles.cancelButton, pressed && styles.actionButtonPressed]}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                accessibilityLabel="Submit location rating"
+                accessibilityRole="button"
+                disabled={!mapPinRating || (mapPinRating === 'duplicate' && duplicateMapPinIds.length === 0)}
+                onPress={submitMapPinReport}
+                style={({ pressed }) => [
+                  styles.confirmButton,
+                  styles.addClassConfirmButton,
+                  (!mapPinRating || (mapPinRating === 'duplicate' && duplicateMapPinIds.length === 0)) &&
+                    styles.mapPinDisabledButton,
+                  pressed && styles.actionButtonPressed,
+                ]}
+              >
+                <Text style={styles.confirmButtonText}>Submit</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <Modal
         animationType="fade"
         transparent
@@ -1758,6 +2274,87 @@ const styles = StyleSheet.create({
   },
   mapScreen: {
     flex: 1,
+  },
+  mapPinDisabledButton: {
+    opacity: 0.45,
+  },
+  mapPinRatingCard: {
+    maxHeight: '90%',
+  },
+  mapPinRatingOptions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 18,
+  },
+  mapPinRatingOption: {
+    alignItems: 'center',
+    borderColor: '#b9dedd',
+    borderRadius: 9,
+    borderWidth: 1,
+    flex: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+  },
+  mapPinRatingOptionSelected: {
+    backgroundColor: '#153b75',
+    borderColor: '#153b75',
+  },
+  mapPinRatingOptionText: {
+    color: '#153b75',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  mapPinRatingOptionTextSelected: {
+    color: '#ffffff',
+  },
+  mapPinDuplicateLabel: {
+    color: '#153b75',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 18,
+  },
+  mapPinDuplicateList: {
+    borderColor: '#b9dedd',
+    borderRadius: 9,
+    borderWidth: 1,
+    marginTop: 8,
+    maxHeight: 200,
+  },
+  mapPinDuplicateOption: {
+    alignItems: 'center',
+    borderBottomColor: '#e3eeee',
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    minHeight: 46,
+    paddingHorizontal: 12,
+  },
+  mapPinCheckbox: {
+    alignItems: 'center',
+    borderColor: '#2b639c',
+    borderRadius: 4,
+    borderWidth: 1,
+    height: 20,
+    justifyContent: 'center',
+    marginRight: 10,
+    width: 20,
+  },
+  mapPinCheckboxSelected: {
+    backgroundColor: '#153b75',
+  },
+  mapPinCheckboxTick: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  mapPinDuplicateName: {
+    color: '#153b75',
+    flex: 1,
+    fontSize: 14,
+  },
+  mapPinNoDuplicates: {
+    color: '#6d7b8b',
+    fontSize: 13,
+    padding: 12,
   },
   scannerScreen: {
     backgroundColor: '#ffffff',
@@ -2118,6 +2715,24 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     top: 70,
     zIndex: 2,
+  },
+  mapHint: {
+    alignSelf: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#b9dedd',
+    borderRadius: 16,
+    borderWidth: 1,
+    elevation: 3,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    position: 'absolute',
+    top: 76,
+    zIndex: 1,
+  },
+  mapHintText: {
+    color: '#153b75',
+    fontSize: 12,
+    fontWeight: '600',
   },
   mapSearchStatus: {
     color: '#6d7b8b',
